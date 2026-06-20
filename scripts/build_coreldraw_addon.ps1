@@ -41,6 +41,7 @@ $distRoot = Split-Path -Parent $OutputDir
 $appExe = Join-Path $OutputDir "app.exe"
 $hostDll = Join-Path $OutputDir "GptCdrVectorHost.dll"
 $installerExe = Join-Path $distRoot "GptCdrVectorInstaller.exe"
+$embeddedPackageZip = Join-Path $distRoot "gpt-cdr-vector-embedded.zip"
 & $csc /nologo /target:winexe /platform:anycpu /out:$appExe `
     /reference:System.dll `
     /reference:System.Core.dll `
@@ -65,17 +66,6 @@ if ($LASTEXITCODE -ne 0) {
     $toolbarSource
 if ($LASTEXITCODE -ne 0) {
     throw "Failed to compile GptCdrVectorHost.dll."
-}
-
-& $csc /nologo /target:winexe /platform:anycpu /out:$installerExe `
-    /reference:System.dll `
-    /reference:System.Core.dll `
-    /reference:System.Drawing.dll `
-    /reference:System.Windows.Forms.dll `
-    $installerSource `
-    $settingsSource
-if ($LASTEXITCODE -ne 0) {
-    throw "Failed to compile GptCdrVectorInstaller.exe."
 }
 
 [System.IO.File]::WriteAllBytes((Join-Path $OutputDir "CorelDrw.addon"), [byte[]]@())
@@ -262,8 +252,8 @@ Files:
 - uisettings.ini: simple Addons-style grouping reference.
 
 Install:
-1. Prefer running GptCdrVectorInstaller.exe from the parent folder. It can auto-detect CorelDRAW Addons roots and install this package.
-2. Manual install: keep CorelDRAW closed.
+1. Prefer running the single-file GptCdrVectorInstaller.exe. It embeds this package, can auto-detect CorelDRAW Addons roots, and installs without needing the zip beside it.
+2. Manual install fallback: keep CorelDRAW closed.
 3. Copy this whole "gpt-cdr-vector" folder to your CorelDRAW Addons root, for example:
    <CorelDRAW>\Programs64\Addons\gpt-cdr-vector
 4. Start CorelDRAW.
@@ -292,6 +282,26 @@ Notes:
 - It does not modify any existing Addons folder unless you copy or install it yourself.
 '@
 Set-Content -LiteralPath (Join-Path $OutputDir "README_INSTALL.txt") -Value $readme -Encoding UTF8
+
+if (Test-Path $embeddedPackageZip) {
+    Remove-Item -LiteralPath $embeddedPackageZip -Force
+}
+Compress-Archive -Path (Join-Path $OutputDir "*") -DestinationPath $embeddedPackageZip
+
+& $csc /nologo /target:winexe /platform:anycpu /out:$installerExe `
+    /reference:System.dll `
+    /reference:System.Core.dll `
+    /reference:System.Drawing.dll `
+    /reference:System.Windows.Forms.dll `
+    /reference:System.IO.Compression.dll `
+    /reference:System.IO.Compression.FileSystem.dll `
+    /resource:$embeddedPackageZip,GptCdrVectorPackage.zip `
+    $installerSource `
+    $settingsSource
+if ($LASTEXITCODE -ne 0) {
+    throw "Failed to compile GptCdrVectorInstaller.exe."
+}
+Remove-Item -LiteralPath $embeddedPackageZip -Force
 
 if ($Zip) {
     $zipPath = Join-Path $distRoot "gpt-cdr-vector-addon.zip"

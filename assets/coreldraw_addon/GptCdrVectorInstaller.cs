@@ -4,7 +4,9 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
+using System.Reflection;
 using System.Windows.Forms;
 using GptCdrVectorShared;
 
@@ -44,6 +46,7 @@ namespace GptCdrVectorInstaller
     static class InstallerCore
     {
         public const string AddonFolderName = "gpt-cdr-vector";
+        const string EmbeddedPackageResourceName = "GptCdrVectorPackage.zip";
 
         public static string FindPackageDir()
         {
@@ -58,7 +61,7 @@ namespace GptCdrVectorInstaller
             {
                 if (HasPackageFiles(candidate)) return candidate;
             }
-            return "";
+            return ExtractEmbeddedPackage();
         }
 
         public static bool HasPackageFiles(string folder)
@@ -66,6 +69,34 @@ namespace GptCdrVectorInstaller
             if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder)) return false;
             string[] files = { "app.exe", "CorelDrw.addon", "AppUI.xslt", "GptCdrVectorHost.dll" };
             return files.All(file => File.Exists(Path.Combine(folder, file)));
+        }
+
+        static string ExtractEmbeddedPackage()
+        {
+            Assembly assembly = Assembly.GetExecutingAssembly();
+            using (Stream stream = assembly.GetManifestResourceStream(EmbeddedPackageResourceName))
+            {
+                if (stream == null) return "";
+
+                string root = Path.Combine(Path.GetTempPath(), "gpt-cdr-vector-installer");
+                string stamp = File.GetLastWriteTimeUtc(assembly.Location).Ticks.ToString();
+                string packageDir = Path.Combine(root, stamp, AddonFolderName);
+                if (HasPackageFiles(packageDir)) return packageDir;
+
+                string extractRoot = Path.GetDirectoryName(packageDir);
+                if (Directory.Exists(extractRoot)) Directory.Delete(extractRoot, true);
+                Directory.CreateDirectory(packageDir);
+
+                string zipPath = Path.Combine(extractRoot, "package.zip");
+                using (FileStream file = File.Create(zipPath))
+                {
+                    stream.CopyTo(file);
+                }
+
+                ZipFile.ExtractToDirectory(zipPath, packageDir);
+                File.Delete(zipPath);
+                return HasPackageFiles(packageDir) ? packageDir : "";
+            }
         }
 
         public static List<InstallTarget> DetectTargets()

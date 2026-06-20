@@ -10,8 +10,8 @@ Files:
 - uisettings.ini: simple Addons-style grouping reference.
 
 Install:
-1. Prefer running GptCdrVectorInstaller.exe from the parent folder. It can auto-detect CorelDRAW Addons roots and install this package.
-2. Manual install: keep CorelDRAW closed.
+1. Prefer running the single-file GptCdrVectorInstaller.exe. It embeds this package, can auto-detect CorelDRAW Addons roots, and installs without needing the zip beside it.
+2. Manual install fallback: keep CorelDRAW closed.
 3. Copy this whole "gpt-cdr-vector" folder to your CorelDRAW Addons root, for example:
    <CorelDRAW>\Programs64\Addons\gpt-cdr-vector
 4. Start CorelDRAW.

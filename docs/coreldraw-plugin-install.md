@@ -22,13 +22,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\build_coreldraw_addo
 dist\coreldraw_addon\gpt-cdr-vector
 ```
 
-推荐运行自动安装器：
+推荐运行单文件自动安装器：
 
 ```text
 dist\coreldraw_addon\GptCdrVectorInstaller.exe
 ```
 
-安装器会自动识别本机已注册的 CorelDRAW 版本和 `Programs64\Addons` 目录，默认勾选检测到的版本。点击“安装插件”后，会把 `gpt-cdr-vector` 插件包复制到对应版本的 Addons 目录，并写入该版本对应的 `corel_version.txt`，让面板连接当前版本的 CorelDRAW。
+安装器已内嵌完整 `gpt-cdr-vector` 插件包，可以单独分发，不需要用户同时下载 zip。安装器会自动识别本机已注册的 CorelDRAW 版本和 `Programs64\Addons` 目录，默认勾选检测到的版本。点击“安装插件”后，会把内嵌插件包复制到对应版本的 Addons 目录，并写入该版本对应的 `corel_version.txt`，让面板连接当前版本的 CorelDRAW。
 
 安装器右侧有“设置 API”按钮，可直接配置：
 
@@ -59,8 +59,8 @@ README_INSTALL.txt
 
 安装方式有三种：
 
-1. 推荐：运行 `GptCdrVectorInstaller.exe`，勾选识别到的 CDR 版本，点击“安装插件”。
-2. 手动复制整个 `gpt-cdr-vector` 文件夹到 CorelDRAW 的 `Programs64\Addons` 根目录下。
+1. 推荐：运行单个 `GptCdrVectorInstaller.exe`，勾选识别到的 CDR 版本，点击“安装插件”。
+2. 备用：从 zip 或构建目录中手动复制整个 `gpt-cdr-vector` 文件夹到 CorelDRAW 的 `Programs64\Addons` 根目录下。
 3. 或运行安装脚本，把包复制到你指定的 Addons 根目录：
 
 ```powershell

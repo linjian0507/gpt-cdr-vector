@@ -10,7 +10,7 @@ GPT CDR Vector is a CorelDRAW helper for generating editable SVG vector artwork 
 - SVG presets for icon/button, logo/wordmark, single object, reference-to-SVG, subject extraction, line art, cutting/engraving, sticker/badge, product label, poster, infographic, diagram, pattern, and background texture.
 - Reference image input from file, current CorelDRAW selection, or clipboard screenshot.
 - API settings page for changing relay API key, API URL, model, and timeout.
-- Generated installer and ready-to-copy Addons package under `dist/coreldraw_addon`.
+- Self-contained installer and ready-to-copy Addons package under `dist/coreldraw_addon`.
 
 ## No API Keys Included
 
@@ -30,13 +30,13 @@ The Addon panel and installer also provide a settings page that writes the same 
 ## Quick Install
 
 1. Close CorelDRAW.
-2. Run:
+2. Download and run the single-file installer:
 
 ```text
 dist/coreldraw_addon/GptCdrVectorInstaller.exe
 ```
 
-3. Let the installer detect your CorelDRAW Addons directory and install the package.
+3. Let the installer detect your CorelDRAW Addons directory and install the embedded package.
 4. Restart CorelDRAW.
 5. Open the `GPT CDR Vector` toolbar button.
 6. Click `设置` or `设置 API` and enter your own relay API key.
@@ -64,6 +64,8 @@ dist/coreldraw_addon/gpt-cdr-vector/
 dist/coreldraw_addon/GptCdrVectorInstaller.exe
 dist/coreldraw_addon/gpt-cdr-vector-addon.zip
 ```
+
+`GptCdrVectorInstaller.exe` is self-contained and embeds the Addons package, so it can be distributed by itself. The zip is kept as a manual-install fallback.
 
 ## Python CLI
 
