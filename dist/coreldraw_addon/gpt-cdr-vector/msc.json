@@ -1,0 +1,77 @@
+﻿[
+  {
+    "name": "No preset",
+    "prompt": "",
+    "description": "Follow the user brief directly as editable SVG."
+  },
+  {
+    "name": "Icon button",
+    "prompt": "Generate one centered SVG icon with consistent strokes, clear silhouette, and small-size readability.",
+    "description": "For icon/logotype-like SVG workflows."
+  },
+  {
+    "name": "Logo wordmark",
+    "prompt": "Generate a clean logo or wordmark SVG with balanced negative space, stable proportions, and simple geometry.",
+    "description": "For brand marks, letter marks, and shop marks."
+  },
+  {
+    "name": "Single object",
+    "prompt": "Generate one isolated object SVG with no unrelated background and editable grouped parts.",
+    "description": "For objects, products, and character subjects."
+  },
+  {
+    "name": "Reference to SVG",
+    "prompt": "Rebuild the reference image as native editable SVG shapes without embedding raster data.",
+    "description": "For image-to-SVG workflows."
+  },
+  {
+    "name": "Subject extraction",
+    "prompt": "Extract the main subject from the prompt or reference image into a clean editable SVG subject layer.",
+    "description": "For isolating subjects and reusable graphic elements."
+  },
+  {
+    "name": "Line art",
+    "prompt": "Generate clean line-art SVG with consistent strokes, minimal fills, and clear contours.",
+    "description": "For outlines, drawings, and instructional illustration."
+  },
+  {
+    "name": "Cut engraving",
+    "prompt": "Generate SVG for cutting or engraving with closed paths, minimal overlaps, and single-color priority.",
+    "description": "For plotters, laser engraving, and contour cutting."
+  },
+  {
+    "name": "Sticker badge",
+    "prompt": "Generate sticker or badge SVG with bold contour, clear border, and print-friendly flat colors.",
+    "description": "For stickers, badges, and patches."
+  },
+  {
+    "name": "Product label",
+    "prompt": "Generate product label SVG with border, ornaments, icons, and editable text areas.",
+    "description": "For package labels, hang tags, and price tags."
+  },
+  {
+    "name": "Editable poster",
+    "prompt": "Generate a complete poster SVG with layout hierarchy, title area, key visual, and decorative detail.",
+    "description": "For campaign posters and activity artwork."
+  },
+  {
+    "name": "Infographic",
+    "prompt": "Generate infographic SVG with sections, icons, labels, arrows, or simple charts.",
+    "description": "For visual explanations and data graphics."
+  },
+  {
+    "name": "Diagram",
+    "prompt": "Generate flowchart or structural diagram SVG with aligned nodes, connectors, arrows, and labels.",
+    "description": "For diagram-to-SVG workflows."
+  },
+  {
+    "name": "Seamless pattern",
+    "prompt": "Generate repeat-friendly SVG pattern with consistent spacing and tileable edges when relevant.",
+    "description": "For background motifs and package patterns."
+  },
+  {
+    "name": "Background texture",
+    "prompt": "Generate vector background SVG with abstract shapes, texture, gradients, and ornaments.",
+    "description": "For decorative backgrounds and page foundations."
+  }
+]

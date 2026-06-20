@@ -1,0 +1,31 @@
+# Local secrets and environment files
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+*token*
+*secret*
+*credential*
+
+# Local Codex/project operation logs
+AGENTS.md
+agents/
+progress.md
+
+# Python/runtime caches
+__pycache__/
+*.py[cod]
+
+# Editor and OS noise
+.idea/
+.vscode/
+*.swp
+Thumbs.db
+Desktop.ini
+
+# Temporary generated references
+gpt-cdr-vector-*.svg
+gpt-cdr-vector-ref-*.png
