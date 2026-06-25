@@ -271,6 +271,11 @@ def call_json_api(api_url: str, api_key: str, payload: dict, timeout_seconds: in
 
 
 def stream_chunk_text(data: dict) -> str:
+    if isinstance(data.get("delta"), str):
+        return data["delta"]
+    if isinstance(data.get("output_text"), str):
+        return data["output_text"]
+
     parts: list[str] = []
     choices = data.get("choices")
     if not isinstance(choices, list):
@@ -351,7 +356,7 @@ def call_text_api(api_url: str, api_key: str, model: str, prompt: str, reference
             {"role": "user", "content": responses_user_content(prompt, reference_image)},
         ],
     }
-    return call_json_api(api_url, api_key, payload, timeout_seconds)
+    return call_chat_stream_api(api_url, api_key, payload, timeout_seconds)
 
 
 def response_text(data: dict) -> str:
@@ -450,6 +455,9 @@ def self_test() -> None:
     stream_text = stream_chunk_text({"choices": [{"delta": {"content": "<svg></svg>"}}]})
     if stream_text != "<svg></svg>":
         raise RuntimeError("stream chunk self-test failed")
+    responses_stream_text = stream_chunk_text({"type": "response.output_text.delta", "delta": "<svg></svg>"})
+    if responses_stream_text != "<svg></svg>":
+        raise RuntimeError("responses stream chunk self-test failed")
     if parse_timeout("600") != 600:
         raise RuntimeError("timeout self-test failed")
     png = Path(os.getenv("TEMP", ".")) / "gpt-cdr-vector-reference-self-test.png"

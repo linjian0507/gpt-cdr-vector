@@ -593,7 +593,7 @@ namespace GptCdrVectorAddon
             if (string.IsNullOrWhiteSpace(key)) throw new InvalidOperationException("OPENAI_RELAY_API_KEY 或 OPENAI_API_KEY 未设置。");
 
             string userPrompt = BuildUserPrompt(request);
-            bool useStream = IsChatCompletionsUrl(request.ApiUrl);
+            bool useStream = IsChatCompletionsUrl(request.ApiUrl) || IsResponsesUrl(request.ApiUrl);
             object payload = BuildPayload(request.ApiUrl, request.Model, userPrompt, request.ReferenceImagePath, useStream);
 
             AddLog(useStream ? "开始调用中转接口（流式返回）。" : "开始调用中转接口。");
@@ -613,7 +613,7 @@ namespace GptCdrVectorAddon
             try
             {
                 response = useStream
-                    ? PostChatCompletionsStream(request.ApiUrl, key, payload, request.Timeout)
+                    ? PostTextStream(request.ApiUrl, key, payload, request.Timeout)
                     : PostJson(request.ApiUrl, key, payload, request.Timeout);
             }
             finally
@@ -715,7 +715,7 @@ namespace GptCdrVectorAddon
                 return payload;
             }
 
-            return new Dictionary<string, object>
+            Dictionary<string, object> responsesPayload = new Dictionary<string, object>
             {
                 {"model", model},
                 {"input", new object[]
@@ -725,6 +725,8 @@ namespace GptCdrVectorAddon
                     }
                 }
             };
+            if (stream) responsesPayload["stream"] = true;
+            return responsesPayload;
         }
 
         object ChatUserContent(string prompt, string requestReferenceImagePath)
@@ -792,7 +794,7 @@ namespace GptCdrVectorAddon
             }
         }
 
-        string PostChatCompletionsStream(string url, string apiKey, object payload, int timeoutSeconds)
+        string PostTextStream(string url, string apiKey, object payload, int timeoutSeconds)
         {
             JavaScriptSerializer serializer = new JavaScriptSerializer();
             serializer.MaxJsonLength = int.MaxValue;
@@ -876,7 +878,19 @@ namespace GptCdrVectorAddon
         {
             object root = serializer.DeserializeObject(json);
             IDictionary dict = root as IDictionary;
-            if (dict == null || !dict.Contains("choices")) return "";
+            if (dict == null) return "";
+
+            if (dict.Contains("delta") && dict["delta"] is string)
+            {
+                return (string)dict["delta"];
+            }
+
+            if (dict.Contains("output_text") && dict["output_text"] is string)
+            {
+                return (string)dict["output_text"];
+            }
+
+            if (!dict.Contains("choices")) return "";
 
             IEnumerable choices = dict["choices"] as IEnumerable;
             if (choices == null) return "";
@@ -1127,6 +1141,11 @@ namespace GptCdrVectorAddon
         bool IsChatCompletionsUrl(string apiUrl)
         {
             return apiUrl.IndexOf("/chat/completions", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        bool IsResponsesUrl(string apiUrl)
+        {
+            return apiUrl.IndexOf("/responses", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         int TimeoutSeconds()
