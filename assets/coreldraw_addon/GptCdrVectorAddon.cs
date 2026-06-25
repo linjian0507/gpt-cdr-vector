@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Net;
@@ -21,6 +22,7 @@ namespace GptCdrVectorAddon
         static void Main()
         {
             ServicePointManager.SecurityProtocol = (SecurityProtocolType)3072;
+            ServicePointManager.Expect100Continue = false;
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             Application.Run(new MainForm());
@@ -32,6 +34,9 @@ namespace GptCdrVectorAddon
         const string ChatUrl = "https://ai.opendoor.sbs/v1/chat/completions";
         const string ResponsesUrl = "https://ai.opendoor.sbs/v1/responses";
         const string DefaultTimeout = "600";
+        const int MaxReferenceImageSide = 1536;
+        const int MaxReferenceImageBytes = 900 * 1024;
+        const long ReferenceJpegQuality = 85L;
 
         readonly TextBox promptBox = new TextBox();
         readonly ComboBox modelBox = new ComboBox();
@@ -873,17 +878,14 @@ namespace GptCdrVectorAddon
             request.Method = "POST";
             request.ContentType = "application/json";
             request.Headers["Authorization"] = "Bearer " + apiKey;
-            request.Timeout = timeoutSeconds * 1000;
-            request.ReadWriteTimeout = timeoutSeconds * 1000;
-            request.ContentLength = data.Length;
-
-            using (Stream requestStream = request.GetRequestStream())
-            {
-                requestStream.Write(data, 0, data.Length);
-            }
+            ConfigureRequest(request, timeoutSeconds, data.Length);
 
             try
             {
+                using (Stream requestStream = request.GetRequestStream())
+                {
+                    requestStream.Write(data, 0, data.Length);
+                }
                 using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
                 using (StreamReader reader = new StreamReader(response.GetResponseStream(), Encoding.UTF8))
                 {
@@ -892,19 +894,7 @@ namespace GptCdrVectorAddon
             }
             catch (WebException ex)
             {
-                string detail = "";
-                if (ex.Response != null)
-                {
-                    using (StreamReader reader = new StreamReader(ex.Response.GetResponseStream(), Encoding.UTF8))
-                    {
-                        detail = reader.ReadToEnd();
-                    }
-                }
-                if (ex.Status == WebExceptionStatus.Timeout)
-                {
-                    throw new InvalidOperationException("接口等待超时。可调大 OPENAI_API_TIMEOUT，或换更便宜/更快的模型。");
-                }
-                throw new InvalidOperationException("接口请求失败：" + (detail.Length > 0 ? detail : ex.Message));
+                throw RequestException(ex, false);
             }
         }
 
@@ -919,18 +909,14 @@ namespace GptCdrVectorAddon
             request.ContentType = "application/json";
             request.Accept = "text/event-stream";
             request.Headers["Authorization"] = "Bearer " + apiKey;
-            request.Timeout = timeoutSeconds * 1000;
-            request.ReadWriteTimeout = timeoutSeconds * 1000;
-            request.KeepAlive = true;
-            request.ContentLength = data.Length;
-
-            using (Stream requestStream = request.GetRequestStream())
-            {
-                requestStream.Write(data, 0, data.Length);
-            }
+            ConfigureRequest(request, timeoutSeconds, data.Length);
 
             try
             {
+                using (Stream requestStream = request.GetRequestStream())
+                {
+                    requestStream.Write(data, 0, data.Length);
+                }
                 using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
                 using (StreamReader reader = new StreamReader(response.GetResponseStream(), Encoding.UTF8))
                 {
@@ -968,24 +954,43 @@ namespace GptCdrVectorAddon
             }
             catch (WebException ex)
             {
-                string detail = "";
-                if (ex.Response != null)
-                {
-                    using (StreamReader reader = new StreamReader(ex.Response.GetResponseStream(), Encoding.UTF8))
-                    {
-                        detail = reader.ReadToEnd();
-                    }
-                }
-                if (ex.Status == WebExceptionStatus.Timeout)
-                {
-                    throw new InvalidOperationException("流式接口等待超时。可调大 OPENAI_API_TIMEOUT，或换更快的模型。");
-                }
-                if (ex.Status == WebExceptionStatus.ConnectionClosed)
-                {
-                    throw new InvalidOperationException("接口连接被提前关闭。通常是中转平台或网络网关中断长任务；请换 gpt-5.4-mini/更小尺寸，或确认中转接口支持 stream=true。");
-                }
-                throw new InvalidOperationException("接口请求失败：" + (detail.Length > 0 ? detail : ex.Message));
+                throw RequestException(ex, true);
             }
+        }
+
+        void ConfigureRequest(HttpWebRequest request, int timeoutSeconds, int contentLength)
+        {
+            request.Timeout = timeoutSeconds * 1000;
+            request.ReadWriteTimeout = timeoutSeconds * 1000;
+            request.KeepAlive = false;
+            request.ContentLength = contentLength;
+            request.ServicePoint.Expect100Continue = false;
+        }
+
+        InvalidOperationException RequestException(WebException ex, bool stream)
+        {
+            string detail = "";
+            if (ex.Response != null)
+            {
+                using (StreamReader reader = new StreamReader(ex.Response.GetResponseStream(), Encoding.UTF8))
+                {
+                    detail = reader.ReadToEnd();
+                }
+            }
+            string message = detail.Length > 0 ? detail : ex.Message;
+            if (ex.Status == WebExceptionStatus.Timeout)
+            {
+                return new InvalidOperationException((stream ? "流式接口" : "接口") + "等待超时。可调大 OPENAI_API_TIMEOUT，或换更快/更便宜的模型。");
+            }
+            if (ex.Status == WebExceptionStatus.SendFailure)
+            {
+                return new InvalidOperationException("接口请求发送失败：连接在发送请求体时被关闭。请重试；如果仍失败，通常是参照图过大、网络网关或中转接口限制导致。当前版本会自动压缩参照图。原始错误：" + message);
+            }
+            if (ex.Status == WebExceptionStatus.ConnectionClosed)
+            {
+                return new InvalidOperationException("接口连接被提前关闭。通常是中转平台或网络网关中断长任务；请换 gpt-5.4-mini/更小尺寸，或确认中转接口支持 stream=true。原始错误：" + message);
+            }
+            return new InvalidOperationException("接口请求失败：" + message);
         }
 
         string StreamChunkText(string json, JavaScriptSerializer serializer)
@@ -1294,7 +1299,68 @@ namespace GptCdrVectorAddon
             else if (ext == ".png") mime = "image/png";
             else if (ext == ".webp") mime = "image/webp";
             else throw new InvalidOperationException("参照图必须是 PNG、JPG、JPEG 或 WEBP。");
-            return "data:" + mime + ";base64," + Convert.ToBase64String(File.ReadAllBytes(path));
+            byte[] bytes = File.ReadAllBytes(path);
+            if (ext == ".png" || ext == ".jpg" || ext == ".jpeg")
+            {
+                bytes = OptimizedReferenceImageBytes(path, bytes, ref mime);
+            }
+            return "data:" + mime + ";base64," + Convert.ToBase64String(bytes);
+        }
+
+        byte[] OptimizedReferenceImageBytes(string path, byte[] originalBytes, ref string mime)
+        {
+            try
+            {
+                using (Image source = Image.FromFile(path))
+                {
+                    int maxSide = Math.Max(source.Width, source.Height);
+                    if (maxSide <= MaxReferenceImageSide && originalBytes.Length <= MaxReferenceImageBytes)
+                    {
+                        return originalBytes;
+                    }
+
+                    double scale = maxSide > MaxReferenceImageSide ? (double)MaxReferenceImageSide / maxSide : 1.0;
+                    int width = Math.Max(1, (int)Math.Round(source.Width * scale));
+                    int height = Math.Max(1, (int)Math.Round(source.Height * scale));
+                    using (Bitmap resized = new Bitmap(width, height))
+                    using (Graphics graphics = Graphics.FromImage(resized))
+                    {
+                        graphics.Clear(Color.White);
+                        graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                        graphics.SmoothingMode = SmoothingMode.HighQuality;
+                        graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                        graphics.DrawImage(source, 0, 0, width, height);
+
+                        ImageCodecInfo jpeg = JpegCodec();
+                        if (jpeg == null) return originalBytes;
+                        using (MemoryStream stream = new MemoryStream())
+                        using (EncoderParameters parameters = new EncoderParameters(1))
+                        {
+                            parameters.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, ReferenceJpegQuality);
+                            resized.Save(stream, jpeg, parameters);
+                            byte[] optimized = stream.ToArray();
+                            mime = "image/jpeg";
+                            AddLog("参照图已压缩：" + source.Width + "x" + source.Height + " / " + (originalBytes.Length / 1024) + " KB -> " + width + "x" + height + " / " + (optimized.Length / 1024) + " KB。");
+                            return optimized;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                AddLog("参照图压缩失败，使用原图发送：" + ex.Message);
+                return originalBytes;
+            }
+        }
+
+        ImageCodecInfo JpegCodec()
+        {
+            ImageCodecInfo[] encoders = ImageCodecInfo.GetImageEncoders();
+            foreach (ImageCodecInfo encoder in encoders)
+            {
+                if (encoder.MimeType == "image/jpeg") return encoder;
+            }
+            return null;
         }
 
         string ReferencePromptSystemPrompt()
