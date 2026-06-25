@@ -158,6 +158,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gpt_cdr_vector_panel
 
 如果生成时报 `基础连接已经关闭` 或 `连接被意外关闭`，通常不是 CorelDRAW 导入问题，而是中转平台/网络网关在长时间无返回数据时中断了非流式请求。新版 Addon 对 `chat/completions` 已启用 `stream=true` 流式返回，用于避免 60 秒空闲断开；如果仍然出现该错误，优先换 `gpt-5.4-mini`、缩小尺寸、减少参照图复杂度，或确认当前中转接口支持 OpenAI 兼容流式返回。
 
+如果面板的 `接口` 下拉框是 `环境变量`，并且 `OPENAI_VECTOR_API_URL` 指向 `/v1/responses`，则不会走 `chat/completions` 流式路径。建议接口选择 `自动`，或在设置页清空/改回 `https://ai.opendoor.sbs/v1/chat/completions`。
+
 ## GMS/VBA 插件面板
 
 下面这一节仅适用于已安装 VBA 的 CorelDRAW。

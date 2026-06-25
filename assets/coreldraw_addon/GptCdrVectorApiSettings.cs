@@ -53,9 +53,9 @@ namespace GptCdrVectorShared
             Controls.Add(timeoutBox);
 
             Label hint = new Label();
-            hint.SetBounds(22, 198, 458, 36);
+            hint.SetBounds(22, 198, 458, 42);
             hint.ForeColor = Color.DimGray;
-            hint.Text = "保存后会写入当前 Windows 用户环境变量；新打开的插件面板会自动读取。";
+            hint.Text = "保存后会写入当前 Windows 用户环境变量。接口地址是高级覆盖项；一般保持 chat/completions，面板默认会自动选择接口。";
             Controls.Add(hint);
 
             Button saveButton = new Button();

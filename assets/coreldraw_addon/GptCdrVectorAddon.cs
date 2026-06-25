@@ -161,7 +161,7 @@ namespace GptCdrVectorAddon
             endpointBox.SetBounds(355, 216, 208, 24);
             endpointBox.DropDownStyle = ComboBoxStyle.DropDownList;
             endpointBox.Items.AddRange(new object[] {"自动", "chat/completions", "responses", "环境变量"});
-            endpointBox.SelectedItem = string.IsNullOrWhiteSpace(Env("OPENAI_VECTOR_API_URL")) ? "自动" : "环境变量";
+            endpointBox.SelectedItem = "自动";
             Controls.Add(endpointBox);
 
             AddLabel("风格", 18, 270, 70);
@@ -464,7 +464,7 @@ namespace GptCdrVectorAddon
                     modelBox.SelectedItem = configuredModel;
                 }
 
-                endpointBox.SelectedItem = string.IsNullOrWhiteSpace(Env("OPENAI_VECTOR_API_URL")) ? "自动" : "环境变量";
+                endpointBox.SelectedItem = "自动";
                 AddLog("API 设置已更新。");
                 SetStatus("API 设置已保存。新任务会使用最新配置。");
             }
