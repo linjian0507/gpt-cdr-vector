@@ -9,6 +9,7 @@ GPT CDR Vector is a CorelDRAW helper for generating editable SVG vector artwork 
 - Model selector for relay models such as `gpt-5.4-mini`, `gpt-5.4`, `gpt-5.5`, and `gpt-4.1-mini`.
 - SVG presets for icon/button, logo/wordmark, single object, reference-to-SVG, subject extraction, line art, cutting/engraving, sticker/badge, product label, poster, infographic, diagram, pattern, and background texture.
 - Reference image input from file, current CorelDRAW selection, or clipboard screenshot.
+- Optional two-step reference workflow: first generate a near 1:1 reconstruction prompt from the reference image, then generate editable SVG from that prompt.
 - API settings page for changing relay API key, API URL, model, and timeout.
 - Self-contained installer and ready-to-copy Addons package under `dist/coreldraw_addon`.
 

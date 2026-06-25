@@ -41,6 +41,7 @@ namespace GptCdrVectorAddon
         readonly ComboBox sizeBox = new ComboBox();
         readonly TextBox colorsBox = new TextBox();
         readonly CheckBox allowTextBox = new CheckBox();
+        readonly CheckBox describeReferenceBox = new CheckBox();
         readonly TextBox referenceBox = new TextBox();
         readonly Label statusLabel = new Label();
         readonly TextBox logBox = new TextBox();
@@ -131,6 +132,7 @@ namespace GptCdrVectorAddon
             public string Colors;
             public bool AllowText;
             public string ReferenceImagePath;
+            public bool DescribeReferenceFirst;
         }
 
         public MainForm()
@@ -234,12 +236,16 @@ namespace GptCdrVectorAddon
             };
             Controls.Add(clearReferenceButton);
 
-            statusLabel.SetBounds(18, 435, 545, 45);
+            describeReferenceBox.SetBounds(90, 424, 245, 24);
+            describeReferenceBox.Text = "先识图生成 1:1 提示词";
+            Controls.Add(describeReferenceBox);
+
+            statusLabel.SetBounds(18, 455, 545, 45);
             statusLabel.Text = "就绪：选择模型后生成可编辑 SVG，再导入 CorelDRAW。";
             Controls.Add(statusLabel);
 
-            AddLabel("运行日志", 18, 490, 100);
-            logBox.SetBounds(18, 516, 545, 180);
+            AddLabel("运行日志", 18, 505, 100);
+            logBox.SetBounds(18, 531, 545, 165);
             logBox.Multiline = true;
             logBox.ReadOnly = true;
             logBox.ScrollBars = ScrollBars.Vertical;
@@ -306,6 +312,19 @@ namespace GptCdrVectorAddon
                 return;
             }
             statusLabel.Text = message;
+        }
+
+        void SetPromptText(string text)
+        {
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action<string>(SetPromptText), text);
+                return;
+            }
+
+            promptBox.Text = text;
+            promptBox.SelectionStart = 0;
+            promptBox.ScrollToCaret();
         }
 
         void SetBusy(bool busy)
@@ -572,7 +591,8 @@ namespace GptCdrVectorAddon
                 Canvas = ParseSize(sizeBox.SelectedItem.ToString()),
                 Colors = colorsBox.Text.Trim(),
                 AllowText = allowTextBox.Checked,
-                ReferenceImagePath = referenceImagePath
+                ReferenceImagePath = referenceImagePath,
+                DescribeReferenceFirst = describeReferenceBox.Checked
             };
         }
 
@@ -586,35 +606,130 @@ namespace GptCdrVectorAddon
             AddLog("接口：" + request.ApiUrl);
             AddLog("超时：" + request.Timeout + " 秒");
             if (!string.IsNullOrWhiteSpace(request.ReferenceImagePath)) AddLog("参照图：" + request.ReferenceImagePath);
+            if (request.DescribeReferenceFirst) AddLog("已启用：先识图生成 1:1 还原提示词。");
             AddLog("输出文件：" + outputPath);
 
             string key = Env("OPENAI_RELAY_API_KEY");
             if (string.IsNullOrWhiteSpace(key)) key = Env("OPENAI_API_KEY");
             if (string.IsNullOrWhiteSpace(key)) throw new InvalidOperationException("OPENAI_RELAY_API_KEY 或 OPENAI_API_KEY 未设置。");
 
-            string userPrompt = BuildUserPrompt(request);
             bool useStream = IsChatCompletionsUrl(request.ApiUrl) || IsResponsesUrl(request.ApiUrl);
-            object payload = BuildPayload(request.ApiUrl, request.Model, userPrompt, request.ReferenceImagePath, useStream);
+            if (request.DescribeReferenceFirst && !string.IsNullOrWhiteSpace(request.ReferenceImagePath))
+            {
+                SetStatus("正在根据参照图生成 1:1 还原提示词...");
+                request.Prompt = DescribeReferencePrompt(request, key, useStream);
+                SetPromptText(request.Prompt);
+                AddLog("还原提示词已写回描述框。");
+                SetStatus("正在用还原提示词生成 SVG...");
+            }
+            else if (request.DescribeReferenceFirst)
+            {
+                AddLog("未选择参照图，跳过识图提示词步骤。");
+            }
 
-            AddLog(useStream ? "开始调用中转接口（流式返回）。" : "开始调用中转接口。");
+            string userPrompt = BuildUserPrompt(request);
+            object payload = BuildPayload(request.ApiUrl, request.Model, userPrompt, request.ReferenceImagePath, useStream);
+            string response = InvokeModelText(request.ApiUrl, key, payload, request.Timeout, useStream, "SVG 生成接口");
+
+            string svg = ValidateSvg(ExtractSvg(useStream ? response : ResponseText(response)), request.Canvas);
+            File.WriteAllText(outputPath, svg + Environment.NewLine, new UTF8Encoding(false));
+            return outputPath;
+        }
+
+        string DescribeReferencePrompt(GenerationRequest request, string key, bool useStream)
+        {
+            AddLog("开始根据参照图生成 1:1 还原提示词。");
+            string brief = BuildReferencePromptBrief(request);
+            object payload = BuildReferencePromptPayload(request.ApiUrl, request.Model, brief, request.ReferenceImagePath, useStream);
+            string response = InvokeModelText(request.ApiUrl, key, payload, request.Timeout, useStream, "识图提示词接口");
+            string text = (useStream ? response : ResponseText(response)).Trim();
+            text = Regex.Replace(text, @"^```(?:text|md|markdown)?\s*", "", RegexOptions.IgnoreCase);
+            text = Regex.Replace(text, @"\s*```$", "").Trim();
+            if (text.Length == 0) throw new InvalidOperationException("识图提示词接口没有返回有效提示词。");
+            AddLog("识图提示词生成完成，长度 " + text.Length + " 字符。");
+            return text;
+        }
+
+        string BuildReferencePromptBrief(GenerationRequest request)
+        {
+            string presetHint = presetHints.ContainsKey(request.Preset) ? presetHints[request.Preset] : presetHints["不使用预设"];
+            string style = EffectiveStyle(request);
+            string referenceRule = ReferenceInstruction(request.Preset);
+
+            return
+                "Analyze the attached reference image and write a detailed prompt for a second AI call that will recreate it as CorelDRAW-ready editable SVG.\n\n" +
+                "Original user intent:\n" + request.Prompt + "\n\n" +
+                "Target SVG task:\n" +
+                "- Canvas: " + request.Canvas.Width + "x" + request.Canvas.Height + ".\n" +
+                "- SVG preset: " + presetHint + "\n" +
+                "- Style: " + styleHints[style] + ".\n" +
+                "- " + (request.AllowText ? "SVG text may be used when the image has readable text." : "Avoid SVG text unless essential; describe unreadable text as editable placeholder areas.") + "\n" +
+                referenceRule + "\n" +
+                "- For this two-step workflow, write the prompt as a near 1:1 reconstruction specification unless the selected preset explicitly asks for an isolated subject, icon, logo, line art, or cutting path.\n" +
+                "Output requirements:\n" +
+                "- Output only the final generation prompt. Do not output SVG, Markdown, bullet preface, or explanation.\n" +
+                "- Describe the image for near 1:1 SVG reconstruction: canvas ratio, background, layout grid, major blocks, subject shapes, relative positions, sizes, margins, spacing, colors, strokes, typography areas, icons, decorations, and layer/group structure.\n" +
+                "- Use precise visual language and relative coordinates such as top/center/bottom, left/right, percentages, rows, columns, alignment, and hierarchy.\n" +
+                "- Preserve only readable text from the image or user intent. For unreadable small text, request clean editable placeholder text areas instead of fake characters.\n" +
+                "- Tell the second model to build native SVG paths/shapes/groups only, with no embedded raster image, no tracing bitmap, no external assets, and no placeholder brand/social logos unless they are clearly part of the requested image.\n" +
+                "- If the preset is an isolated asset task, focus the prompt on the main object/icon/logo/line art instead of the full page or poster layout.";
+        }
+
+        object BuildReferencePromptPayload(string apiUrl, string model, string prompt, string requestReferenceImagePath, bool stream)
+        {
+            if (IsChatCompletionsUrl(apiUrl))
+            {
+                Dictionary<string, object> payload = new Dictionary<string, object>
+                {
+                    {"model", model},
+                    {"messages", new object[]
+                        {
+                            new Dictionary<string, object> {{"role", "system"}, {"content", ReferencePromptSystemPrompt()}},
+                            new Dictionary<string, object> {{"role", "user"}, {"content", ChatUserContent(prompt, requestReferenceImagePath)}}
+                        }
+                    },
+                    {"temperature", 0.1}
+                };
+                if (stream) payload["stream"] = true;
+                return payload;
+            }
+
+            Dictionary<string, object> responsesPayload = new Dictionary<string, object>
+            {
+                {"model", model},
+                {"input", new object[]
+                    {
+                        new Dictionary<string, object> {{"role", "system"}, {"content", ReferencePromptSystemPrompt()}},
+                        new Dictionary<string, object> {{"role", "user"}, {"content", ResponsesUserContent(prompt, requestReferenceImagePath)}}
+                    }
+                }
+            };
+            if (stream) responsesPayload["stream"] = true;
+            return responsesPayload;
+        }
+
+        string InvokeModelText(string apiUrl, string key, object payload, int timeout, bool useStream, string taskName)
+        {
+            AddLog(useStream ? "开始调用" + taskName + "（流式返回）。" : "开始调用" + taskName + "。");
             DateTime startedAt = DateTime.Now;
             ManualResetEvent waitDone = new ManualResetEvent(false);
             Thread progressThread = new Thread(new ThreadStart(delegate
             {
                 while (!waitDone.WaitOne(15000))
                 {
-                    AddLog("接口生成中，已等待 " + (int)(DateTime.Now - startedAt).TotalSeconds + " 秒。");
+                    AddLog(taskName + "生成中，已等待 " + (int)(DateTime.Now - startedAt).TotalSeconds + " 秒。");
                 }
             }));
             progressThread.IsBackground = true;
             progressThread.Start();
 
-            string response;
             try
             {
-                response = useStream
-                    ? PostTextStream(request.ApiUrl, key, payload, request.Timeout)
-                    : PostJson(request.ApiUrl, key, payload, request.Timeout);
+                string response = useStream
+                    ? PostTextStream(apiUrl, key, payload, timeout)
+                    : PostJson(apiUrl, key, payload, timeout);
+                AddLog(taskName + "已返回，用时 " + (int)(DateTime.Now - startedAt).TotalSeconds + " 秒。");
+                return response;
             }
             finally
             {
@@ -622,11 +737,6 @@ namespace GptCdrVectorAddon
                 progressThread.Join(1000);
                 waitDone.Close();
             }
-            AddLog("接口已返回，用时 " + (int)(DateTime.Now - startedAt).TotalSeconds + " 秒。");
-
-            string svg = ValidateSvg(ExtractSvg(useStream ? response : ResponseText(response)), request.Canvas);
-            File.WriteAllText(outputPath, svg + Environment.NewLine, new UTF8Encoding(false));
-            return outputPath;
         }
 
         string BuildUserPrompt(GenerationRequest request)
@@ -637,6 +747,9 @@ namespace GptCdrVectorAddon
             string style = EffectiveStyle(request);
             string presetGuard = PresetGuard(request.Preset);
             string referenceLine = string.IsNullOrWhiteSpace(request.ReferenceImagePath) ? "" : ReferenceInstruction(request.Preset);
+            string twoStepLine = request.DescribeReferenceFirst && !string.IsNullOrWhiteSpace(request.ReferenceImagePath)
+                ? "- The design brief was generated from the reference image. Treat it as the authoritative reconstruction specification and keep the layout/details as close as SVG allows.\n"
+                : "";
 
             return
                 "Create CorelDRAW-ready SVG vector artwork.\n\n" +
@@ -647,6 +760,7 @@ namespace GptCdrVectorAddon
                 "- Style: " + styleHints[style] + ".\n" +
                 "- When the selected SVG preset conflicts with the visual style, prioritize the preset.\n" +
                 presetGuard +
+                twoStepLine +
                 "- " + colorLine + "\n" +
                 "- " + textLine + "\n" +
                 "- Target use: CorelDRAW editable SVG vector artwork.\n" +
@@ -1181,6 +1295,16 @@ namespace GptCdrVectorAddon
             else if (ext == ".webp") mime = "image/webp";
             else throw new InvalidOperationException("参照图必须是 PNG、JPG、JPEG 或 WEBP。");
             return "data:" + mime + ";base64," + Convert.ToBase64String(File.ReadAllBytes(path));
+        }
+
+        string ReferencePromptSystemPrompt()
+        {
+            return
+                "You are a visual reconstruction prompt writer for editable SVG production.\n" +
+                "Inspect the attached image and return only a detailed prompt for another model to generate SVG.\n" +
+                "Do not return SVG, JSON, Markdown, commentary, analysis, or apologies.\n" +
+                "Be specific about layout, geometry, colors, typography areas, spacing, visual hierarchy, and editable SVG layer groups.\n" +
+                "The next model must recreate native vector shapes for CorelDRAW, without embedding the raster reference image.";
         }
 
         string SystemPrompt()

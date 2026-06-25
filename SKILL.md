@@ -78,6 +78,8 @@ For slow relay models or reference-image generation, increase `OPENAI_API_TIMEOU
 
 The Addon panel includes SVG presets for icon/button, logo/wordmark, single object, reference-to-SVG, subject extraction, line art, cutting/engraving, sticker/badge, product label, poster, infographic, diagram, pattern, and background. Preset controls the SVG production task; visual style only affects appearance. Non-poster presets must suppress poster/card/page layout, and reference images for subject/object/icon presets should guide only the isolated asset, not the full source layout. References can come from an image file, the current CorelDRAW selection exported to a temporary PNG, or a pasted clipboard screenshot.
 
+The Addon panel can run a two-step reference workflow. When `先识图生成 1:1 提示词` is enabled and a reference image exists, it first asks the vision-capable relay model to write a near 1:1 SVG reconstruction prompt from the image, writes that prompt back into the description box, then uses it for the SVG generation call. This improves screenshot/layout restoration but costs one extra model request.
+
 The non-VBA panel includes a model selector for `gpt-5.4-mini`, `gpt-5.4`, `gpt-5.5`, and `gpt-4.1-mini`; it defaults to `gpt-5.4-mini` to reduce draft cost.
 
 ### 中文宏说明
@@ -97,6 +99,8 @@ The non-VBA panel includes a model selector for `gpt-5.4-mini`, `gpt-5.4`, `gpt-
 慢模型或带参照图生成海报时可调大 `OPENAI_API_TIMEOUT`；面板默认等待 600 秒。
 
 Addon 面板提供 SVG 预设，可选图标/按钮、Logo/字标、单物体主体、参照图转 SVG、提取主体、线稿轮廓、切割雕刻、贴纸徽章、产品标签、可编辑海报、信息图表、流程图解、无缝图案和背景纹理。预设决定 SVG 生产任务，风格只影响视觉表现。
+
+Addon 面板支持 `先识图生成 1:1 提示词`：当已有参照图时，先用视觉模型把图片整理成还原提示词并回填到描述框，再用该提示词生成 SVG。该流程适合截图/现有图稿还原，但会增加一次模型请求。
 
 非 VBA 面板提供模型下拉选择，可在 `gpt-5.4-mini`、`gpt-5.4`、`gpt-5.5`、`gpt-4.1-mini` 间切换；默认选 `gpt-5.4-mini` 以降低试稿成本。
 
