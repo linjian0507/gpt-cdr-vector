@@ -593,9 +593,10 @@ namespace GptCdrVectorAddon
             if (string.IsNullOrWhiteSpace(key)) throw new InvalidOperationException("OPENAI_RELAY_API_KEY 或 OPENAI_API_KEY 未设置。");
 
             string userPrompt = BuildUserPrompt(request);
-            object payload = BuildPayload(request.ApiUrl, request.Model, userPrompt, request.ReferenceImagePath);
+            bool useStream = IsChatCompletionsUrl(request.ApiUrl);
+            object payload = BuildPayload(request.ApiUrl, request.Model, userPrompt, request.ReferenceImagePath, useStream);
 
-            AddLog("开始调用中转接口。");
+            AddLog(useStream ? "开始调用中转接口（流式返回）。" : "开始调用中转接口。");
             DateTime startedAt = DateTime.Now;
             ManualResetEvent waitDone = new ManualResetEvent(false);
             Thread progressThread = new Thread(new ThreadStart(delegate
@@ -611,7 +612,9 @@ namespace GptCdrVectorAddon
             string response;
             try
             {
-                response = PostJson(request.ApiUrl, key, payload, request.Timeout);
+                response = useStream
+                    ? PostChatCompletionsStream(request.ApiUrl, key, payload, request.Timeout)
+                    : PostJson(request.ApiUrl, key, payload, request.Timeout);
             }
             finally
             {
@@ -621,7 +624,7 @@ namespace GptCdrVectorAddon
             }
             AddLog("接口已返回，用时 " + (int)(DateTime.Now - startedAt).TotalSeconds + " 秒。");
 
-            string svg = ValidateSvg(ExtractSvg(ResponseText(response)), request.Canvas);
+            string svg = ValidateSvg(ExtractSvg(useStream ? response : ResponseText(response)), request.Canvas);
             File.WriteAllText(outputPath, svg + Environment.NewLine, new UTF8Encoding(false));
             return outputPath;
         }
@@ -693,11 +696,11 @@ namespace GptCdrVectorAddon
             return "- Use the attached reference image for visual direction, spacing, color mood, and useful composition cues. Rebuild it as editable SVG shapes; do not embed or trace the image as raster data. Keep only the parts that match the selected preset and user brief.\n";
         }
 
-        object BuildPayload(string apiUrl, string model, string userPrompt, string requestReferenceImagePath)
+        object BuildPayload(string apiUrl, string model, string userPrompt, string requestReferenceImagePath, bool stream)
         {
-            if (apiUrl.IndexOf("/chat/completions", StringComparison.OrdinalIgnoreCase) >= 0)
+            if (IsChatCompletionsUrl(apiUrl))
             {
-                return new Dictionary<string, object>
+                Dictionary<string, object> payload = new Dictionary<string, object>
                 {
                     {"model", model},
                     {"messages", new object[]
@@ -708,6 +711,8 @@ namespace GptCdrVectorAddon
                     },
                     {"temperature", 0.2}
                 };
+                if (stream) payload["stream"] = true;
+                return payload;
             }
 
             return new Dictionary<string, object>
@@ -785,6 +790,135 @@ namespace GptCdrVectorAddon
                 }
                 throw new InvalidOperationException("接口请求失败：" + (detail.Length > 0 ? detail : ex.Message));
             }
+        }
+
+        string PostChatCompletionsStream(string url, string apiKey, object payload, int timeoutSeconds)
+        {
+            JavaScriptSerializer serializer = new JavaScriptSerializer();
+            serializer.MaxJsonLength = int.MaxValue;
+            byte[] data = Encoding.UTF8.GetBytes(serializer.Serialize(payload));
+
+            HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
+            request.Method = "POST";
+            request.ContentType = "application/json";
+            request.Accept = "text/event-stream";
+            request.Headers["Authorization"] = "Bearer " + apiKey;
+            request.Timeout = timeoutSeconds * 1000;
+            request.ReadWriteTimeout = timeoutSeconds * 1000;
+            request.KeepAlive = true;
+            request.ContentLength = data.Length;
+
+            using (Stream requestStream = request.GetRequestStream())
+            {
+                requestStream.Write(data, 0, data.Length);
+            }
+
+            try
+            {
+                using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
+                using (StreamReader reader = new StreamReader(response.GetResponseStream(), Encoding.UTF8))
+                {
+                    StringBuilder text = new StringBuilder();
+                    bool receivedAny = false;
+                    int nextLogAt = 2000;
+                    string line;
+                    while ((line = reader.ReadLine()) != null)
+                    {
+                        line = line.Trim();
+                        if (line.Length == 0 || !line.StartsWith("data:", StringComparison.OrdinalIgnoreCase)) continue;
+
+                        string dataLine = line.Substring(5).Trim();
+                        if (dataLine == "[DONE]") break;
+
+                        string part = StreamChunkText(dataLine, serializer);
+                        if (part.Length == 0) continue;
+
+                        if (!receivedAny)
+                        {
+                            AddLog("流式接口已开始返回内容。");
+                            receivedAny = true;
+                        }
+                        text.Append(part);
+                        if (text.Length >= nextLogAt)
+                        {
+                            AddLog("流式内容已接收约 " + text.Length + " 字符。");
+                            nextLogAt += 2000;
+                        }
+                    }
+
+                    if (text.Length == 0) throw new InvalidOperationException("流式接口未返回文本内容。");
+                    return text.ToString();
+                }
+            }
+            catch (WebException ex)
+            {
+                string detail = "";
+                if (ex.Response != null)
+                {
+                    using (StreamReader reader = new StreamReader(ex.Response.GetResponseStream(), Encoding.UTF8))
+                    {
+                        detail = reader.ReadToEnd();
+                    }
+                }
+                if (ex.Status == WebExceptionStatus.Timeout)
+                {
+                    throw new InvalidOperationException("流式接口等待超时。可调大 OPENAI_API_TIMEOUT，或换更快的模型。");
+                }
+                if (ex.Status == WebExceptionStatus.ConnectionClosed)
+                {
+                    throw new InvalidOperationException("接口连接被提前关闭。通常是中转平台或网络网关中断长任务；请换 gpt-5.4-mini/更小尺寸，或确认中转接口支持 stream=true。");
+                }
+                throw new InvalidOperationException("接口请求失败：" + (detail.Length > 0 ? detail : ex.Message));
+            }
+        }
+
+        string StreamChunkText(string json, JavaScriptSerializer serializer)
+        {
+            object root = serializer.DeserializeObject(json);
+            IDictionary dict = root as IDictionary;
+            if (dict == null || !dict.Contains("choices")) return "";
+
+            IEnumerable choices = dict["choices"] as IEnumerable;
+            if (choices == null) return "";
+
+            StringBuilder text = new StringBuilder();
+            foreach (object choiceObj in choices)
+            {
+                IDictionary choice = choiceObj as IDictionary;
+                if (choice == null) continue;
+
+                if (choice.Contains("delta"))
+                {
+                    IDictionary delta = choice["delta"] as IDictionary;
+                    if (delta != null && delta.Contains("content")) text.Append(ContentValueToText(delta["content"]));
+                }
+                else if (choice.Contains("message"))
+                {
+                    IDictionary message = choice["message"] as IDictionary;
+                    if (message != null && message.Contains("content")) text.Append(ContentValueToText(message["content"]));
+                }
+            }
+            return text.ToString();
+        }
+
+        string ContentValueToText(object content)
+        {
+            if (content == null) return "";
+            if (content is string) return (string)content;
+
+            IEnumerable list = content as IEnumerable;
+            if (list == null) return "";
+
+            StringBuilder text = new StringBuilder();
+            foreach (object item in list)
+            {
+                IDictionary part = item as IDictionary;
+                if (part != null && part.Contains("text") && part["text"] is string)
+                {
+                    text.Append((string)part["text"]);
+                }
+            }
+            return text.ToString();
         }
 
         string ResponseText(string json)
@@ -988,6 +1122,11 @@ namespace GptCdrVectorAddon
 
             if (model.StartsWith("gpt-5.5", StringComparison.OrdinalIgnoreCase)) return ResponsesUrl;
             return ChatUrl;
+        }
+
+        bool IsChatCompletionsUrl(string apiUrl)
+        {
+            return apiUrl.IndexOf("/chat/completions", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         int TimeoutSeconds()

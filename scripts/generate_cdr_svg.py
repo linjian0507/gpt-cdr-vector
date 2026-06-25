@@ -270,6 +270,68 @@ def call_json_api(api_url: str, api_key: str, payload: dict, timeout_seconds: in
         raise RuntimeError(f"API request failed: {exc}") from exc
 
 
+def stream_chunk_text(data: dict) -> str:
+    parts: list[str] = []
+    choices = data.get("choices")
+    if not isinstance(choices, list):
+        return ""
+    for choice in choices:
+        if not isinstance(choice, dict):
+            continue
+        delta = choice.get("delta")
+        if isinstance(delta, dict):
+            content = delta.get("content")
+            if isinstance(content, str):
+                parts.append(content)
+            elif isinstance(content, list):
+                parts.extend(part.get("text") for part in content if isinstance(part, dict) and isinstance(part.get("text"), str))
+        message = choice.get("message")
+        if isinstance(message, dict):
+            content = message.get("content")
+            if isinstance(content, str):
+                parts.append(content)
+    return "".join(parts)
+
+
+def call_chat_stream_api(api_url: str, api_key: str, payload: dict, timeout_seconds: int) -> dict:
+    stream_payload = dict(payload)
+    stream_payload["stream"] = True
+    request = urllib.request.Request(
+        api_url,
+        data=json.dumps(stream_payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "Accept": "text/event-stream",
+        },
+        method="POST",
+    )
+    try:
+        chunks: list[str] = []
+        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+            for raw_line in response:
+                line = raw_line.decode("utf-8", errors="replace").strip()
+                if not line.startswith("data:"):
+                    continue
+                data_line = line[5:].strip()
+                if data_line == "[DONE]":
+                    break
+                chunks.append(stream_chunk_text(json.loads(data_line)))
+        if not chunks:
+            raise RuntimeError("Streaming API returned no text content.")
+        return {"choices": [{"message": {"content": "".join(chunks)}}]}
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"API request failed: HTTP {exc.code}: {detail}") from exc
+    except (TimeoutError, socket.timeout) as exc:
+        raise RuntimeError(
+            f"Streaming API request timed out after {timeout_seconds} seconds. "
+            "Increase OPENAI_API_TIMEOUT or use a faster model."
+        ) from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"Streaming API request failed: {exc}") from exc
+
+
 def call_text_api(api_url: str, api_key: str, model: str, prompt: str, reference_image: str | None, timeout_seconds: int) -> dict:
     if "/chat/completions" in api_url:
         payload = {
@@ -280,7 +342,7 @@ def call_text_api(api_url: str, api_key: str, model: str, prompt: str, reference
             ],
             "temperature": 0.2,
         }
-        return call_json_api(api_url, api_key, payload, timeout_seconds)
+        return call_chat_stream_api(api_url, api_key, payload, timeout_seconds)
 
     payload = {
         "model": model,
@@ -385,6 +447,9 @@ def self_test() -> None:
     chat_text = response_text({"choices": [{"message": {"content": sample}}]})
     if "<svg" not in extract_svg(chat_text):
         raise RuntimeError("chat response self-test failed")
+    stream_text = stream_chunk_text({"choices": [{"delta": {"content": "<svg></svg>"}}]})
+    if stream_text != "<svg></svg>":
+        raise RuntimeError("stream chunk self-test failed")
     if parse_timeout("600") != 600:
         raise RuntimeError("timeout self-test failed")
     png = Path(os.getenv("TEMP", ".")) / "gpt-cdr-vector-reference-self-test.png"

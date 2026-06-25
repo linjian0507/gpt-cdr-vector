@@ -156,6 +156,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gpt_cdr_vector_panel
 
 如果生成时报 `read operation timed out`，说明接口在本地等待时间内没有返回。优先把 `OPENAI_API_TIMEOUT` 调到 `900`，如果仍然超时，再降低模型、缩小尺寸或去掉参照图重试；也可能是中转平台自身提前断开长请求。
 
+如果生成时报 `基础连接已经关闭` 或 `连接被意外关闭`，通常不是 CorelDRAW 导入问题，而是中转平台/网络网关在长时间无返回数据时中断了非流式请求。新版 Addon 对 `chat/completions` 已启用 `stream=true` 流式返回，用于避免 60 秒空闲断开；如果仍然出现该错误，优先换 `gpt-5.4-mini`、缩小尺寸、减少参照图复杂度，或确认当前中转接口支持 OpenAI 兼容流式返回。
+
 ## GMS/VBA 插件面板
 
 下面这一节仅适用于已安装 VBA 的 CorelDRAW。
