@@ -47,6 +47,7 @@ namespace GptCdrVectorAddon
         readonly TextBox colorsBox = new TextBox();
         readonly CheckBox allowTextBox = new CheckBox();
         readonly CheckBox describeReferenceBox = new CheckBox();
+        readonly CheckBox hybridReferenceBox = new CheckBox();
         readonly TextBox referenceBox = new TextBox();
         readonly Label statusLabel = new Label();
         readonly TextBox logBox = new TextBox();
@@ -138,6 +139,7 @@ namespace GptCdrVectorAddon
             public bool AllowText;
             public string ReferenceImagePath;
             public bool DescribeReferenceFirst;
+            public bool HybridReferenceMode;
         }
 
         public MainForm()
@@ -244,6 +246,10 @@ namespace GptCdrVectorAddon
             describeReferenceBox.SetBounds(90, 424, 245, 24);
             describeReferenceBox.Text = "先识图生成 1:1 提示词";
             Controls.Add(describeReferenceBox);
+
+            hybridReferenceBox.SetBounds(335, 424, 220, 24);
+            hybridReferenceBox.Text = "混合还原（底图+可编辑层）";
+            Controls.Add(hybridReferenceBox);
 
             statusLabel.SetBounds(18, 455, 545, 45);
             statusLabel.Text = "就绪：选择模型后生成可编辑 SVG，再导入 CorelDRAW。";
@@ -583,6 +589,8 @@ namespace GptCdrVectorAddon
         {
             string prompt = promptBox.Text.Trim();
             if (prompt.Length == 0) throw new InvalidOperationException("请输入图形描述。");
+            if (hybridReferenceBox.Checked && string.IsNullOrWhiteSpace(referenceImagePath))
+                throw new InvalidOperationException("混合还原需要先选择、粘贴或使用 CDR 选中对象作为参照图。");
 
             string model = SelectedModel();
             return new GenerationRequest
@@ -597,7 +605,8 @@ namespace GptCdrVectorAddon
                 Colors = colorsBox.Text.Trim(),
                 AllowText = allowTextBox.Checked,
                 ReferenceImagePath = referenceImagePath,
-                DescribeReferenceFirst = describeReferenceBox.Checked
+                DescribeReferenceFirst = describeReferenceBox.Checked || hybridReferenceBox.Checked,
+                HybridReferenceMode = hybridReferenceBox.Checked
             };
         }
 
@@ -612,6 +621,7 @@ namespace GptCdrVectorAddon
             AddLog("超时：" + request.Timeout + " 秒");
             if (!string.IsNullOrWhiteSpace(request.ReferenceImagePath)) AddLog("参照图：" + request.ReferenceImagePath);
             if (request.DescribeReferenceFirst) AddLog("已启用：先识图生成 1:1 还原提示词。");
+            if (request.HybridReferenceMode) AddLog("已启用：混合还原（底图+可编辑层）。");
             AddLog("输出文件：" + outputPath);
 
             string key = Env("OPENAI_RELAY_API_KEY");
@@ -619,6 +629,11 @@ namespace GptCdrVectorAddon
             if (string.IsNullOrWhiteSpace(key)) throw new InvalidOperationException("OPENAI_RELAY_API_KEY 或 OPENAI_API_KEY 未设置。");
 
             bool useStream = IsChatCompletionsUrl(request.ApiUrl) || IsResponsesUrl(request.ApiUrl);
+            if (request.HybridReferenceMode)
+            {
+                return GenerateHybridSvg(request, key, useStream, outputPath);
+            }
+
             if (request.DescribeReferenceFirst && !string.IsNullOrWhiteSpace(request.ReferenceImagePath))
             {
                 SetStatus("正在根据参照图生成 1:1 还原提示词...");
@@ -639,6 +654,68 @@ namespace GptCdrVectorAddon
             string svg = ValidateSvg(ExtractSvg(useStream ? response : ResponseText(response)), request.Canvas);
             File.WriteAllText(outputPath, svg + Environment.NewLine, new UTF8Encoding(false));
             return outputPath;
+        }
+
+        string GenerateHybridSvg(GenerationRequest request, string key, bool useStream, string outputPath)
+        {
+            if (string.IsNullOrWhiteSpace(request.ReferenceImagePath))
+                throw new InvalidOperationException("混合还原需要参照图。");
+
+            SetStatus("正在根据参照图生成混合还原规格...");
+            request.Prompt = DescribeReferencePrompt(request, key, useStream);
+            SetPromptText(request.Prompt);
+            AddLog("混合还原规格已写回描述框。");
+
+            SetStatus("正在生成可编辑覆盖层 SVG...");
+            string overlayPrompt = BuildHybridOverlayPrompt(request);
+            object payload = BuildPayload(request.ApiUrl, request.Model, overlayPrompt, request.ReferenceImagePath, useStream);
+            string response = InvokeModelText(request.ApiUrl, key, payload, request.Timeout, useStream, "可编辑覆盖层接口");
+            string overlaySvg = ValidateSvg(ExtractSvg(useStream ? response : ResponseText(response)), request.Canvas);
+
+            string hybridSvg = BuildHybridSvg(request, overlaySvg);
+            File.WriteAllText(outputPath, hybridSvg + Environment.NewLine, new UTF8Encoding(false));
+            AddLog("混合 SVG 已合成：参照底图 + 可编辑覆盖层。");
+            return outputPath;
+        }
+
+        string BuildHybridOverlayPrompt(GenerationRequest request)
+        {
+            return
+                "Create only the editable overlay SVG for a CorelDRAW hybrid reconstruction file.\n\n" +
+                "The full reference image will be embedded separately as a bottom bitmap layer by the application. Do not recreate the bitmap background in this overlay.\n\n" +
+                "Reconstruction specification from the reference image:\n" + request.Prompt + "\n\n" +
+                "Overlay rules:\n" +
+                "- Canvas: " + request.Canvas.Width + "x" + request.Canvas.Height + ", viewBox 0 0 " + request.Canvas.Width + " " + request.Canvas.Height + ".\n" +
+                "- Output a transparent SVG overlay only. Do not draw a full white poster background, outer blue background, or embedded image.\n" +
+                "- Rebuild readable Chinese/English text as editable <text> elements in the same approximate positions, colors, sizes, weights, and alignment.\n" +
+                "- Rebuild simple vector parts only: frames, borders, divider lines, notice boxes, geometric decorations, simple icons, book stacks, shelves, tables, chairs, and rough flat illustration guides.\n" +
+                "- For complex people or detailed illustration areas, create simple editable vector guide groups with approximate silhouettes and colors; the embedded reference bitmap remains underneath for exact visual detail.\n" +
+                "- Preserve source wording. Do not translate, paraphrase, invent a new warning, add no-food/no-smoking symbols, add social media logos, or redesign the poster.\n" +
+                "- Organize groups with ids: ocr_text, frames_borders, simple_shapes, illustration_guides, editable_notes.\n" +
+                "- Use fill=\"none\" for transparent areas; keep overlay objects inside the viewBox.\n" +
+                "- Output only SVG XML.";
+        }
+
+        string BuildHybridSvg(GenerationRequest request, string overlaySvg)
+        {
+            string overlayBody = SvgInnerContent(overlaySvg);
+            string imageData = ImageDataUrl(request.ReferenceImagePath);
+            return
+                "<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" width=\"" + request.Canvas.Width + "\" height=\"" + request.Canvas.Height + "\" viewBox=\"0 0 " + request.Canvas.Width + " " + request.Canvas.Height + "\">\n" +
+                "  <g id=\"reference_bitmap\" opacity=\"0.38\">\n" +
+                "    <image x=\"0\" y=\"0\" width=\"" + request.Canvas.Width + "\" height=\"" + request.Canvas.Height + "\" preserveAspectRatio=\"xMidYMid meet\" href=\"" + imageData + "\" xlink:href=\"" + imageData + "\" />\n" +
+                "  </g>\n" +
+                "  <g id=\"editable_overlay\">\n" +
+                overlayBody + "\n" +
+                "  </g>\n" +
+                "</svg>";
+        }
+
+        string SvgInnerContent(string svg)
+        {
+            Match match = Regex.Match(svg, @"<svg\b[^>]*>([\s\S]*?)</svg>", RegexOptions.IgnoreCase);
+            if (!match.Success) throw new InvalidOperationException("找不到 SVG 内容。");
+            return match.Groups[1].Value.Trim();
         }
 
         string DescribeReferencePrompt(GenerationRequest request, string key, bool useStream)
@@ -662,6 +739,9 @@ namespace GptCdrVectorAddon
             string isolatedAssetLine = IsIsolatedReferencePreset(request.Preset)
                 ? "The selected preset asks for an isolated asset. Extract only the main subject required by the preset and ignore unrelated poster/page surroundings.\n"
                 : "The selected preset does not require isolation. Treat the whole reference image as the source layout to recreate, especially if it is a poster, sign, label, card, page, or packaging design.\n";
+            string hybridLine = request.HybridReferenceMode
+                ? "- Hybrid reconstruction is enabled: the original image will remain as a bottom bitmap layer. Identify readable text, frames, borders, simple shapes, and rough guide objects that should be rebuilt as editable SVG overlay layers.\n"
+                : "";
 
             return
                 "Analyze the attached reference image and write a strict reconstruction specification for a second AI call that will recreate it as CorelDRAW-ready editable SVG.\n\n" +
@@ -672,12 +752,14 @@ namespace GptCdrVectorAddon
                 "- Style: " + styleHints[style] + ".\n" +
                 "- Readable text in the reference must be preserved as editable SVG text when possible, even if the normal text option is off.\n" +
                 "- " + isolatedAssetLine +
+                hybridLine +
                 "Output requirements for the reconstruction specification:\n" +
                 "- Output only the final prompt/specification for the second model. Do not output SVG, JSON, Markdown fences, analysis, or explanation.\n" +
                 "- Use these plain text section headings exactly: STRICT_REFERENCE_RECONSTRUCTION, CANVAS_AND_FRAME, TEXT_OCR, LAYOUT_MAP, VECTOR_ELEMENTS, COLOR_AND_STYLE, EDITABLE_LAYER_PLAN, NEGATIVE_RULES, FINAL_SVG_RULES.\n" +
                 "- In TEXT_OCR, list every readable text string exactly as seen, including Chinese and English, and include approximate position and hierarchy. Do not translate, paraphrase, invent, or corrupt Chinese text. If small text is unreadable, write [unreadable small text] instead of fake characters.\n" +
                 "- In LAYOUT_MAP, describe the page as a measured composition using percentages: outer background, inner white panel, top title area, subtitle area, center notice box, illustration area, bottom objects, margins, alignment, and spacing.\n" +
                 "- In VECTOR_ELEMENTS, count and position every major visible object, person, furniture item, book stack, shelf, decorative border, icon, plant, and panel. Mention their relative sizes and colors.\n" +
+                "- In EDITABLE_LAYER_PLAN, mark which parts should be editable overlay text/shapes and which complex illustration details can remain represented by the bottom bitmap in hybrid mode.\n" +
                 "- In COLOR_AND_STYLE, name exact dominant colors and how they are used, including background blue bands, white panel, blue typography, yellow/red accents, and flat illustration colors.\n" +
                 "- In NEGATIVE_RULES, explicitly forbid redesigning the poster, changing the title text, replacing Chinese with abstract glyphs, changing the number/pose of people, turning the layout into a sparse icon row, adding social media logos, or moving major sections.\n" +
                 "- In FINAL_SVG_RULES, tell the second model to recreate native SVG paths/shapes/groups only, no embedded raster image, no external assets, no bitmap tracing, no fake text, and no unrelated decorative elements.";
