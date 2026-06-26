@@ -659,25 +659,28 @@ namespace GptCdrVectorAddon
         {
             string presetHint = presetHints.ContainsKey(request.Preset) ? presetHints[request.Preset] : presetHints["不使用预设"];
             string style = EffectiveStyle(request);
-            string referenceRule = ReferenceInstruction(request.Preset);
+            string isolatedAssetLine = IsIsolatedReferencePreset(request.Preset)
+                ? "The selected preset asks for an isolated asset. Extract only the main subject required by the preset and ignore unrelated poster/page surroundings.\n"
+                : "The selected preset does not require isolation. Treat the whole reference image as the source layout to recreate, especially if it is a poster, sign, label, card, page, or packaging design.\n";
 
             return
-                "Analyze the attached reference image and write a detailed prompt for a second AI call that will recreate it as CorelDRAW-ready editable SVG.\n\n" +
+                "Analyze the attached reference image and write a strict reconstruction specification for a second AI call that will recreate it as CorelDRAW-ready editable SVG.\n\n" +
                 "Original user intent:\n" + request.Prompt + "\n\n" +
                 "Target SVG task:\n" +
                 "- Canvas: " + request.Canvas.Width + "x" + request.Canvas.Height + ".\n" +
                 "- SVG preset: " + presetHint + "\n" +
                 "- Style: " + styleHints[style] + ".\n" +
-                "- " + (request.AllowText ? "SVG text may be used when the image has readable text." : "Avoid SVG text unless essential; describe unreadable text as editable placeholder areas.") + "\n" +
-                referenceRule + "\n" +
-                "- For this two-step workflow, write the prompt as a near 1:1 reconstruction specification unless the selected preset explicitly asks for an isolated subject, icon, logo, line art, or cutting path.\n" +
-                "Output requirements:\n" +
-                "- Output only the final generation prompt. Do not output SVG, Markdown, bullet preface, or explanation.\n" +
-                "- Describe the image for near 1:1 SVG reconstruction: canvas ratio, background, layout grid, major blocks, subject shapes, relative positions, sizes, margins, spacing, colors, strokes, typography areas, icons, decorations, and layer/group structure.\n" +
-                "- Use precise visual language and relative coordinates such as top/center/bottom, left/right, percentages, rows, columns, alignment, and hierarchy.\n" +
-                "- Preserve only readable text from the image or user intent. For unreadable small text, request clean editable placeholder text areas instead of fake characters.\n" +
-                "- Tell the second model to build native SVG paths/shapes/groups only, with no embedded raster image, no tracing bitmap, no external assets, and no placeholder brand/social logos unless they are clearly part of the requested image.\n" +
-                "- If the preset is an isolated asset task, focus the prompt on the main object/icon/logo/line art instead of the full page or poster layout.";
+                "- Readable text in the reference must be preserved as editable SVG text when possible, even if the normal text option is off.\n" +
+                "- " + isolatedAssetLine +
+                "Output requirements for the reconstruction specification:\n" +
+                "- Output only the final prompt/specification for the second model. Do not output SVG, JSON, Markdown fences, analysis, or explanation.\n" +
+                "- Use these plain text section headings exactly: STRICT_REFERENCE_RECONSTRUCTION, CANVAS_AND_FRAME, TEXT_OCR, LAYOUT_MAP, VECTOR_ELEMENTS, COLOR_AND_STYLE, EDITABLE_LAYER_PLAN, NEGATIVE_RULES, FINAL_SVG_RULES.\n" +
+                "- In TEXT_OCR, list every readable text string exactly as seen, including Chinese and English, and include approximate position and hierarchy. Do not translate, paraphrase, invent, or corrupt Chinese text. If small text is unreadable, write [unreadable small text] instead of fake characters.\n" +
+                "- In LAYOUT_MAP, describe the page as a measured composition using percentages: outer background, inner white panel, top title area, subtitle area, center notice box, illustration area, bottom objects, margins, alignment, and spacing.\n" +
+                "- In VECTOR_ELEMENTS, count and position every major visible object, person, furniture item, book stack, shelf, decorative border, icon, plant, and panel. Mention their relative sizes and colors.\n" +
+                "- In COLOR_AND_STYLE, name exact dominant colors and how they are used, including background blue bands, white panel, blue typography, yellow/red accents, and flat illustration colors.\n" +
+                "- In NEGATIVE_RULES, explicitly forbid redesigning the poster, changing the title text, replacing Chinese with abstract glyphs, changing the number/pose of people, turning the layout into a sparse icon row, adding social media logos, or moving major sections.\n" +
+                "- In FINAL_SVG_RULES, tell the second model to recreate native SVG paths/shapes/groups only, no embedded raster image, no external assets, no bitmap tracing, no fake text, and no unrelated decorative elements.";
         }
 
         object BuildReferencePromptPayload(string apiUrl, string model, string prompt, string requestReferenceImagePath, bool stream)
@@ -746,14 +749,17 @@ namespace GptCdrVectorAddon
 
         string BuildUserPrompt(GenerationRequest request)
         {
+            bool strictReference = request.DescribeReferenceFirst && !string.IsNullOrWhiteSpace(request.ReferenceImagePath);
             string colorLine = request.Colors.Length > 0 ? "Preferred colors: " + request.Colors + "." : "Choose a compact production-friendly palette.";
-            string textLine = request.AllowText ? "Text is allowed if requested by the design brief." : "Avoid text unless it is absolutely necessary.";
+            string textLine = strictReference
+                ? "Strict reference mode: preserve every readable source text exactly; use plain editable <text> elements for Chinese and English text when this improves fidelity."
+                : (request.AllowText ? "Text is allowed if requested by the design brief." : "Avoid text unless it is absolutely necessary.");
             string presetHint = presetHints.ContainsKey(request.Preset) ? presetHints[request.Preset] : presetHints["不使用预设"];
             string style = EffectiveStyle(request);
             string presetGuard = PresetGuard(request.Preset);
-            string referenceLine = string.IsNullOrWhiteSpace(request.ReferenceImagePath) ? "" : ReferenceInstruction(request.Preset);
-            string twoStepLine = request.DescribeReferenceFirst && !string.IsNullOrWhiteSpace(request.ReferenceImagePath)
-                ? "- The design brief was generated from the reference image. Treat it as the authoritative reconstruction specification and keep the layout/details as close as SVG allows.\n"
+            string referenceLine = string.IsNullOrWhiteSpace(request.ReferenceImagePath) ? "" : (strictReference ? StrictReferenceInstruction(request.Preset) : ReferenceInstruction(request.Preset));
+            string twoStepLine = strictReference
+                ? "- Strict reference restoration is enabled. The design brief was generated from the reference image; treat it and the attached reference image together as the source of truth.\n"
                 : "";
 
             return
@@ -777,6 +783,7 @@ namespace GptCdrVectorAddon
                 "- Use 3-6 coordinated colors with deliberate contrast. For isolated assets, add only subject details; for composition presets, add depth through layered vector shapes, subtle gradients, frames, grids, badges, or ornaments.\n" +
                 "- Make the result feel finished for its preset: icon clarity, object isolation, diagram structure, pattern consistency, label balance, or poster hierarchy as appropriate.\n" +
                 "- Keep text areas legible: no overlapping text, no tiny filler text, and no pseudo-letters.\n" +
+                "- For Chinese poster/sign reconstruction, prefer clean editable <text> with matching color, weight, spacing, outline, or shadow over abstract unreadable glyph shapes.\n" +
                 referenceLine +
                 "- Output only SVG XML.";
         }
@@ -813,6 +820,26 @@ namespace GptCdrVectorAddon
                 return "- Rebuild the attached reference image as editable SVG shapes. Preserve the major source layout and visible objects, but do not embed, trace, or rasterize the image.\n";
             }
             return "- Use the attached reference image for visual direction, spacing, color mood, and useful composition cues. Rebuild it as editable SVG shapes; do not embed or trace the image as raster data. Keep only the parts that match the selected preset and user brief.\n";
+        }
+
+        bool IsIsolatedReferencePreset(string preset)
+        {
+            return preset == "提取主体" || preset == "单物体主体" || preset == "图标/按钮" || preset == "Logo/字标" || preset == "线稿轮廓" || preset == "切割雕刻" || preset == "贴纸徽章";
+        }
+
+        string StrictReferenceInstruction(string preset)
+        {
+            if (IsIsolatedReferencePreset(preset))
+            {
+                return
+                    "- Strict reference mode for isolated asset: use the attached reference image only to identify the requested main subject. Preserve its silhouette, proportions, colors, and visible details, but remove unrelated page/poster background.\n" +
+                    "- Do not copy a full poster/page layout for this isolated preset.\n";
+            }
+            return
+                "- Strict reference mode: recreate the attached reference image as closely as possible in native editable SVG.\n" +
+                "- Preserve the same canvas ratio, outer background, inner frame, section order, margins, typography hierarchy, decorative borders, people count, object positions, color placement, and bottom illustration layout.\n" +
+                "- Preserve readable Chinese/English text exactly; if text is visible in the source, use the same wording and keep its hierarchy, color, alignment, and approximate size.\n" +
+                "- Do not redesign, summarize, crop, replace, or reinterpret the reference. Do not change readable text. Do not turn stylized Chinese headings into random abstract shapes; use exact editable text with vector styling.\n";
         }
 
         object BuildPayload(string apiUrl, string model, string userPrompt, string requestReferenceImagePath, bool stream)
@@ -1366,11 +1393,12 @@ namespace GptCdrVectorAddon
         string ReferencePromptSystemPrompt()
         {
             return
-                "You are a visual reconstruction prompt writer for editable SVG production.\n" +
-                "Inspect the attached image and return only a detailed prompt for another model to generate SVG.\n" +
+                "You are a meticulous OCR and visual reconstruction prompt writer for editable SVG production.\n" +
+                "Inspect the attached image and return only a strict reconstruction prompt for another model to generate SVG.\n" +
                 "Do not return SVG, JSON, Markdown, commentary, analysis, or apologies.\n" +
-                "Be specific about layout, geometry, colors, typography areas, spacing, visual hierarchy, and editable SVG layer groups.\n" +
-                "The next model must recreate native vector shapes for CorelDRAW, without embedding the raster reference image.";
+                "First identify every readable Chinese and English text string exactly, then describe layout, geometry, colors, typography areas, spacing, visual hierarchy, illustration objects, and editable SVG layer groups.\n" +
+                "If text is uncertain, mark it as unreadable instead of inventing characters.\n" +
+                "The next model must recreate native vector shapes for CorelDRAW, without embedding the raster reference image or redesigning the source.";
         }
 
         string SystemPrompt()
@@ -1385,6 +1413,11 @@ namespace GptCdrVectorAddon
                 "- Use a complete result appropriate to the task: single-object SVGs should be clean and isolated; icons should be simple and legible; diagrams should be structured; posters should feel complete.\n" +
                 "- If the preset is not explicitly poster, never add poster/page/card/app-screen layout, title panels, social icon strips, or unrelated background sections.\n" +
                 "- Keep all shapes intentional and aligned; avoid random symbols, unrelated brands, fake logos, and invented text.\n\n" +
+                "Reference reconstruction discipline:\n" +
+                "- When strict reference restoration is requested, the attached reference image and reconstruction brief are the source of truth.\n" +
+                "- Preserve readable Chinese/English text exactly with editable <text> when possible.\n" +
+                "- Never replace Chinese headings with abstract unreadable glyphs or random characters.\n" +
+                "- Preserve the count, pose, and relative placement of major people/objects from the reference.\n\n" +
                 "CorelDRAW compatibility requirements:\n" +
                 "- Use a viewBox and explicit width/height.\n" +
                 "- Prefer paths, basic shapes, flat fills, simple strokes, and simple gradients.\n" +
