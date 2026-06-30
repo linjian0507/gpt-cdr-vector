@@ -7,7 +7,6 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $sourceFile = Join-Path $repoRoot "assets\coreldraw_addon\GptCdrVectorAddon.cs"
-$toolbarSource = Join-Path $repoRoot "assets\coreldraw_addon\GptCdrVectorToolbar.cs"
 $installerSource = Join-Path $repoRoot "assets\coreldraw_addon\GptCdrVectorInstaller.cs"
 $settingsSource = Join-Path $repoRoot "assets\coreldraw_addon\GptCdrVectorApiSettings.cs"
 
@@ -23,23 +22,10 @@ if (!(Test-Path $csc)) {
     throw "Cannot find .NET Framework csc.exe."
 }
 
-$frameworkDir = Split-Path -Parent $csc
-$wpfDir = Join-Path $frameworkDir "WPF"
-$windowsBase = Join-Path $wpfDir "WindowsBase.dll"
-$presentationCore = Join-Path $wpfDir "PresentationCore.dll"
-$presentationFramework = Join-Path $wpfDir "PresentationFramework.dll"
-$systemXaml = Join-Path $frameworkDir "System.Xaml.dll"
-foreach ($reference in @($windowsBase, $presentationCore, $presentationFramework, $systemXaml)) {
-    if (!(Test-Path $reference)) {
-        throw "Cannot find required WPF reference: $reference"
-    }
-}
-
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 $distRoot = Split-Path -Parent $OutputDir
 
 $appExe = Join-Path $OutputDir "app.exe"
-$hostDll = Join-Path $OutputDir "GptCdrVectorHost.dll"
 $installerExe = Join-Path $distRoot "GptCdrVectorInstaller.exe"
 $embeddedPackageZip = Join-Path $distRoot "gpt-cdr-vector-embedded.zip"
 & $csc /nologo /target:winexe /platform:anycpu /out:$appExe `
@@ -55,26 +41,17 @@ if ($LASTEXITCODE -ne 0) {
     throw "Failed to compile app.exe."
 }
 
-& $csc /nologo /target:library /platform:anycpu /out:$hostDll `
-    /reference:System.dll `
-    /reference:System.Core.dll `
-    /reference:System.Drawing.dll `
-    /reference:$windowsBase `
-    /reference:$presentationCore `
-    /reference:$presentationFramework `
-    /reference:$systemXaml `
-    $toolbarSource
-if ($LASTEXITCODE -ne 0) {
-    throw "Failed to compile GptCdrVectorHost.dll."
+foreach ($legacyFile in @("GptCdrVectorHost.dll", "CorelDrw.addon")) {
+    $legacyPath = Join-Path $OutputDir $legacyFile
+    if (Test-Path $legacyPath) {
+        Remove-Item -LiteralPath $legacyPath -Force
+    }
 }
-
-[System.IO.File]::WriteAllBytes((Join-Path $OutputDir "CorelDrw.addon"), [byte[]]@())
 
 $appUi = @'
 <?xml version="1.0" encoding="UTF-8"?>
-<xsl:stylesheet version="1.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform" xmlns:frmwrk="Corel Framework Data">
+<xsl:stylesheet version="1.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform" xmlns:frmwrk="Corel Framework Data" exclude-result-prefixes="frmwrk">
   <xsl:output method="xml" encoding="UTF-8" indent="yes"/>
-
   <frmwrk:uiconfig>
     <frmwrk:applicationInfo userConfiguration="true" />
   </frmwrk:uiconfig>
@@ -83,37 +60,6 @@ $appUi = @'
     <xsl:copy>
       <xsl:apply-templates select="node()|@*"/>
     </xsl:copy>
-  </xsl:template>
-
-  <xsl:template match="uiConfig/items">
-    <xsl:copy>
-      <xsl:apply-templates select="node()|@*"/>
-      <itemData guid="96d6b822-8d2c-4077-8f8f-d1ce0b9896e5"
-                type="wpfhost"
-                hostedType="Addons\gpt-cdr-vector\GptCdrVectorHost.dll,GptCdrVectorHost.Toolbar"
-                enable="true">
-      </itemData>
-    </xsl:copy>
-  </xsl:template>
-
-  <xsl:template match="uiConfig/commandBars">
-    <xsl:copy>
-      <xsl:apply-templates select="node()|@*"/>
-      <commandBarData guid="9f52c93f-d4a5-4317-961d-1d271a0eb211"
-                      nonLocalizableName="gpt-cdr-vector"
-                      userCaption="GPT CDR Vector"
-                      locked="false"
-                      type="toolbar">
-        <toolbar>
-          <item guidRef="96d6b822-8d2c-4077-8f8f-d1ce0b9896e5" dock="top"/>
-        </toolbar>
-      </commandBarData>
-    </xsl:copy>
-  </xsl:template>
-
-  <xsl:template match="uiConfig/containers/container[@guid='bee85f91-3ad9-dc8d-48b5-d2a87c8b2109']/container[@guid='Framework_MainFrame-layout']/dockHost[@guid='894bf987-2ec1-8f83-41d8-68f6797d0db4']/toolbar[@guidRef='c2b44f69-6dec-444e-a37e-5dbf7ff43dae']">
-    <xsl:copy-of select="."/>
-    <toolbar guidRef="9f52c93f-d4a5-4317-961d-1d271a0eb211" dock="top" />
   </xsl:template>
 </xsl:stylesheet>
 '@
@@ -140,8 +86,8 @@ $configJson = @'
 {
   "name": "GPT CDR Vector",
   "entry": "app.exe",
-  "toolbarHost": "GptCdrVectorHost.dll",
-  "description": "Generate editable SVG vector artwork through a relay model and import it into CorelDRAW.",
+  "startupMode": "safe-external-app",
+  "description": "Generate editable SVG vector artwork through a relay model and import it into CorelDRAW from a safe external panel.",
   "corelProgIdDefault": "CorelDRAW.Application.20",
   "apiKeyEnv": ["OPENAI_RELAY_API_KEY", "OPENAI_API_KEY"],
   "timeoutEnv": "OPENAI_API_TIMEOUT",
@@ -149,6 +95,13 @@ $configJson = @'
 }
 '@
 Set-Content -LiteralPath (Join-Path $OutputDir "config.json") -Value $configJson -Encoding UTF8
+
+$startCmd = @'
+@echo off
+cd /d "%~dp0"
+start "" "%~dp0app.exe"
+'@
+Set-Content -LiteralPath (Join-Path $OutputDir "start-gpt-cdr-vector.cmd") -Value $startCmd -Encoding ASCII
 
 $presetsJson = @'
 [
@@ -243,10 +196,9 @@ $readme = @'
 GPT CDR Vector - CorelDRAW Addons package
 
 Files:
-- CorelDrw.addon: marker file that lets CorelDRAW scan this Addons folder.
-- AppUI.xslt: adds a fixed top toolbar hosted control to the CorelDRAW workspace.
-- GptCdrVectorHost.dll: small WPF toolbar button host. Clicking it opens app.exe.
 - app.exe: main non-VBA panel. It calls the relay API directly and imports SVG into CorelDRAW through COM.
+- start-gpt-cdr-vector.cmd: convenience launcher for app.exe.
+- AppUI.xslt / UserUI.xslt: safe no-op UI transforms. They do not inject a toolbar or load an in-process WPF host.
 - config.json: package metadata and environment variable names.
 - msc.json: preset descriptions for humans and future UI extension.
 - uisettings.ini: simple Addons-style grouping reference.
@@ -257,13 +209,14 @@ Install:
 3. Copy this whole "gpt-cdr-vector" folder to your CorelDRAW Addons root, for example:
    <CorelDRAW>\Programs64\Addons\gpt-cdr-vector
 4. Start CorelDRAW.
-5. A "GPT CDR Vector" toolbar should appear at the top with a button.
-6. Click the toolbar button to open the panel. You can also run app.exe directly from this folder.
+5. This safe package does not add a CorelDRAW toolbar button, because the previous in-process WPF host could freeze CorelDRAW 2018 on some installations.
+6. Open the panel by running app.exe or start-gpt-cdr-vector.cmd from this folder.
 
-If the toolbar does not appear:
-- Make sure the folder name is exactly "gpt-cdr-vector" directly under Programs64\Addons.
-- Restart CorelDRAW.
-- If the workspace was already cached, start CorelDRAW while holding F8 to reapply workspace UI transforms.
+If CorelDRAW becomes unresponsive:
+- Close CorelDRAW.
+- Delete the old Programs64\Addons\gpt-cdr-vector folder.
+- Install this safe package again.
+- Confirm the installed folder has no CorelDrw.addon, no GptCdrVectorHost.dll, and AppUI.xslt does not contain wpfhost.
 
 Required environment variables:
 - OPENAI_RELAY_API_KEY: your relay API key.
@@ -279,6 +232,7 @@ Optional environment variables:
 Notes:
 - This package does not require VBA.
 - It does not require Python for generation.
+- It does not load a .NET/WPF toolbar inside CorelDRAW.
 - It does not modify any existing Addons folder unless you copy or install it yourself.
 '@
 Set-Content -LiteralPath (Join-Path $OutputDir "README_INSTALL.txt") -Value $readme -Encoding UTF8
@@ -314,5 +268,4 @@ if ($Zip) {
 
 Write-Host "Addon package: $OutputDir"
 Write-Host "App: $appExe"
-Write-Host "Toolbar host: $hostDll"
 Write-Host "Installer: $installerExe"

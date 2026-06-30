@@ -67,7 +67,7 @@ namespace GptCdrVectorInstaller
         public static bool HasPackageFiles(string folder)
         {
             if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder)) return false;
-            string[] files = { "app.exe", "CorelDrw.addon", "AppUI.xslt", "GptCdrVectorHost.dll" };
+            string[] files = { "app.exe", "start-gpt-cdr-vector.cmd", "config.json" };
             return files.All(file => File.Exists(Path.Combine(folder, file)));
         }
 
@@ -348,7 +348,7 @@ namespace GptCdrVectorInstaller
 
             Panel header = new Panel { Left = 0, Top = 0, Width = 560, Height = 92, BackColor = Color.FromArgb(73, 143, 232) };
             Label title = new Label { Left = 22, Top = 20, Width = 290, Height = 34, Text = "GPT CDR Vector", ForeColor = Color.White, Font = new Font("Microsoft YaHei UI", 20, FontStyle.Bold) };
-            Label sub = new Label { Left = 24, Top = 58, Width = 280, Height = 22, Text = "CorelDRAW 固定工具栏插件", ForeColor = Color.White, Font = new Font("Microsoft YaHei UI", 10, FontStyle.Italic) };
+            Label sub = new Label { Left = 24, Top = 58, Width = 300, Height = 22, Text = "CorelDRAW 安全外部面板", ForeColor = Color.White, Font = new Font("Microsoft YaHei UI", 10, FontStyle.Italic) };
             Label version = new Label { Left = 430, Top = 27, Width = 92, Height = 44, Text = "VIP\n1.0", ForeColor = Color.White, TextAlign = ContentAlignment.MiddleCenter, Font = new Font("Microsoft YaHei UI", 14, FontStyle.Bold) };
             header.Controls.Add(title);
             header.Controls.Add(sub);
@@ -511,7 +511,7 @@ namespace GptCdrVectorInstaller
                 {
                     InstallerCore.Install(packageDir, target);
                 }
-                statusLabel.Text = "安装完成。请重启 CorelDRAW；若未显示工具栏，请按住 F8 启动重置工作区。";
+                statusLabel.Text = "安装完成。请重启 CorelDRAW；从安装目录运行 app.exe 或 start-gpt-cdr-vector.cmd。";
                 MessageBox.Show(this, "安装完成。", "GPT CDR Vector", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)

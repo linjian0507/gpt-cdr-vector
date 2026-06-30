@@ -47,8 +47,7 @@ OPENAI_API_TIMEOUT
 GptCdrVectorInstaller.exe
 gpt-cdr-vector\
 app.exe
-GptCdrVectorHost.dll
-CorelDrw.addon
+start-gpt-cdr-vector.cmd
 AppUI.xslt
 UserUI.xslt
 config.json
@@ -90,7 +89,7 @@ setx GPT_CDR_VECTOR_COREL_VERSION "20"
 
 `GPT_CDR_VECTOR_COREL_VERSION=20` 对应 CorelDRAW 2018。默认就是 `20`。
 
-安装后，`CorelDrw.addon` 会让 CorelDRAW 扫描该目录，`AppUI.xslt` 会把 `GptCdrVectorHost.dll` 固定到顶部工具栏。工具栏按钮点击后打开 `app.exe` 面板；`app.exe` 会直接调用中转接口生成可编辑 SVG，再通过 CorelDRAW COM 导入当前文档。它保留 API 设置、模型选择、参照图、运行日志、只生成 SVG、生成并导入、导入已有文件等功能。参照图可以从文件选择，也可以把 CorelDRAW 当前选中对象导出为临时 PNG，或直接粘贴剪贴板截图。
+安装后，新版安全包不再包含 `CorelDrw.addon` 自动加载入口，也不会注入顶部工具栏或加载 `GptCdrVectorHost.dll` 这类 Corel 进程内 WPF 宿主。这样可以避免 CorelDRAW 2018 在启动/界面加载阶段被插件卡住。需要使用面板时，到安装目录运行 `app.exe` 或 `start-gpt-cdr-vector.cmd`；面板会直接调用中转接口生成可编辑 SVG，再通过 CorelDRAW COM 导入当前文档。它保留 API 设置、模型选择、参照图、运行日志、只生成 SVG、生成并导入、导入已有文件等功能。参照图可以从文件选择，也可以把 CorelDRAW 当前选中对象导出为临时 PNG，或直接粘贴剪贴板截图。
 
 面板新增 `SVG预设`，用于选择 SVG 生产任务，而不是生图模型场景。可选项包括 `不使用预设`、`图标/按钮`、`Logo/字标`、`单物体主体`、`参照图转SVG`、`提取主体`、`线稿轮廓`、`切割雕刻`、`贴纸徽章`、`产品标签`、`可编辑海报`、`信息图表`、`流程图解`、`无缝图案`、`背景纹理`。预设决定生成目标，`风格` 只决定视觉表现；二者冲突时优先按 `SVG预设` 执行。非海报预设会自动压制 `poster` 风格，避免继续生成卡片、海报或整页版式。
 
@@ -104,7 +103,7 @@ setx GPT_CDR_VECTOR_COREL_VERSION "20"
 
 生成提示词已按 SVG 生产流程优化：会要求模型先内部规划任务类型、几何结构、版式、视觉层级、色彩、留白、图形密度和 CorelDRAW 图层结构，再输出 SVG；同时会避免稀疏图标排布、随机品牌名、伪文字、大面积空白和占位式模板。该优化能提高构图完整度和可编辑层次，但纯文本模型生成 SVG 仍不等同于专业位图海报模型，复杂写实效果建议先用参照图或更强模型试稿。
 
-注意：不同 CorelDRAW 整合包的工作区缓存行为不完全相同。如果复制后没有自动出现顶部工具栏，先确认目录名必须是 `Programs64\Addons\gpt-cdr-vector`，然后重启 CorelDRAW；仍未出现时，按住 `F8` 启动 CorelDRAW 让工作区重新应用 Addons 的 UI 变换。
+注意：从安全版开始不会自动出现顶部工具栏，CorelDRAW 启动时也不会加载本工具。如果之前安装过会导致 CDR 无响应的旧版，请先关闭 CorelDRAW，删除旧目录 `Programs64\Addons\gpt-cdr-vector` 后再安装新版，确认新版目录里没有 `CorelDrw.addon`、没有 `GptCdrVectorHost.dll`，且 `AppUI.xslt` 中没有 `wpfhost`。
 
 ## 非 VBA PowerShell 面板
 

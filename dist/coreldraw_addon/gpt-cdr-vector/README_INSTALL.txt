@@ -1,10 +1,9 @@
 ﻿GPT CDR Vector - CorelDRAW Addons package
 
 Files:
-- CorelDrw.addon: marker file that lets CorelDRAW scan this Addons folder.
-- AppUI.xslt: adds a fixed top toolbar hosted control to the CorelDRAW workspace.
-- GptCdrVectorHost.dll: small WPF toolbar button host. Clicking it opens app.exe.
 - app.exe: main non-VBA panel. It calls the relay API directly and imports SVG into CorelDRAW through COM.
+- start-gpt-cdr-vector.cmd: convenience launcher for app.exe.
+- AppUI.xslt / UserUI.xslt: safe no-op UI transforms. They do not inject a toolbar or load an in-process WPF host.
 - config.json: package metadata and environment variable names.
 - msc.json: preset descriptions for humans and future UI extension.
 - uisettings.ini: simple Addons-style grouping reference.
@@ -15,13 +14,14 @@ Install:
 3. Copy this whole "gpt-cdr-vector" folder to your CorelDRAW Addons root, for example:
    <CorelDRAW>\Programs64\Addons\gpt-cdr-vector
 4. Start CorelDRAW.
-5. A "GPT CDR Vector" toolbar should appear at the top with a button.
-6. Click the toolbar button to open the panel. You can also run app.exe directly from this folder.
+5. This safe package does not add a CorelDRAW toolbar button, because the previous in-process WPF host could freeze CorelDRAW 2018 on some installations.
+6. Open the panel by running app.exe or start-gpt-cdr-vector.cmd from this folder.
 
-If the toolbar does not appear:
-- Make sure the folder name is exactly "gpt-cdr-vector" directly under Programs64\Addons.
-- Restart CorelDRAW.
-- If the workspace was already cached, start CorelDRAW while holding F8 to reapply workspace UI transforms.
+If CorelDRAW becomes unresponsive:
+- Close CorelDRAW.
+- Delete the old Programs64\Addons\gpt-cdr-vector folder.
+- Install this safe package again.
+- Confirm the installed folder has no CorelDrw.addon, no GptCdrVectorHost.dll, and AppUI.xslt does not contain wpfhost.
 
 Required environment variables:
 - OPENAI_RELAY_API_KEY: your relay API key.
@@ -37,4 +37,5 @@ Optional environment variables:
 Notes:
 - This package does not require VBA.
 - It does not require Python for generation.
+- It does not load a .NET/WPF toolbar inside CorelDRAW.
 - It does not modify any existing Addons folder unless you copy or install it yourself.

@@ -1,8 +1,8 @@
 ﻿{
   "name": "GPT CDR Vector",
   "entry": "app.exe",
-  "toolbarHost": "GptCdrVectorHost.dll",
-  "description": "Generate editable SVG vector artwork through a relay model and import it into CorelDRAW.",
+  "startupMode": "safe-external-app",
+  "description": "Generate editable SVG vector artwork through a relay model and import it into CorelDRAW from a safe external panel.",
   "corelProgIdDefault": "CorelDRAW.Application.20",
   "apiKeyEnv": ["OPENAI_RELAY_API_KEY", "OPENAI_API_KEY"],
   "timeoutEnv": "OPENAI_API_TIMEOUT",
