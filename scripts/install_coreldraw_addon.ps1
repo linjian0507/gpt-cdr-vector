@@ -12,12 +12,12 @@ if ([string]::IsNullOrWhiteSpace($PackageDir)) {
     $PackageDir = Join-Path $repoRoot "dist\coreldraw_addon\gpt-cdr-vector"
 }
 
-$appExe = Join-Path $PackageDir "app.exe"
+$appExe = Join-Path $PackageDir "panel\app.exe"
 if (!(Test-Path $appExe)) {
     & (Join-Path $PSScriptRoot "build_coreldraw_addon.ps1")
 }
 if (!(Test-Path $appExe)) {
-    throw "Cannot find built app.exe: $appExe"
+    throw "Cannot find built panel app.exe: $appExe"
 }
 
 if (!(Test-Path $AddonsRoot)) {
@@ -37,5 +37,5 @@ Copy-Item -Path (Join-Path $PackageDir "*") -Destination $targetDir -Recurse -Fo
 
 Write-Host "Installed GPT CDR Vector Addon to:"
 Write-Host $targetDir
-Write-Host "Restart CorelDRAW. This safe package does not load a toolbar inside CorelDRAW."
-Write-Host "Open the panel by running app.exe or start-gpt-cdr-vector.cmd from the installed folder."
+Write-Host "Restart CorelDRAW, then click the GPT矢量 toolbar button."
+Write-Host "If the toolbar is not applied, run start-gpt-cdr-vector.cmd from the installed folder as a fallback."

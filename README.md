@@ -4,7 +4,7 @@ GPT CDR Vector is a CorelDRAW helper for generating editable SVG vector artwork 
 
 ## Features
 
-- Safe CorelDRAW Addons package with a non-VBA external panel; it does not load a WPF toolbar inside CorelDRAW.
+- CorelDRAW Addons package with a fixed toolbar launcher and non-VBA external panel.
 - Direct relay API calls from the panel; Python is not required for the Addon package.
 - Model selector for relay models such as `gpt-5.4-mini`, `gpt-5.4`, `gpt-5.5`, and `gpt-4.1-mini`.
 - SVG presets for icon/button, logo/wordmark, single object, reference-to-SVG, subject extraction, line art, cutting/engraving, sticker/badge, product label, poster, infographic, diagram, pattern, and background texture.
@@ -40,7 +40,7 @@ dist/coreldraw_addon/GptCdrVectorInstaller.exe
 
 3. Let the installer detect your CorelDRAW Addons directory and install the embedded package.
 4. Restart CorelDRAW.
-5. Open the installed `gpt-cdr-vector` folder and run `app.exe` or `start-gpt-cdr-vector.cmd`.
+5. Click the `GPT矢量` toolbar button, or run `start-gpt-cdr-vector.cmd` from the installed folder as a fallback.
 6. Click `设置` or `设置 API` and enter your own relay API key.
 
 The package is installed under:
@@ -49,7 +49,7 @@ The package is installed under:
 <CorelDRAW>\Programs64\Addons\gpt-cdr-vector
 ```
 
-This safe package intentionally does not include `CorelDrw.addon`, so CorelDRAW will not auto-load it at startup. Older WPF toolbar-host builds could make CorelDRAW 2018 stop responding on some systems.
+This package keeps the full panel outside the CorelDRAW process. The Addons root contains only the marker, UI transform, and a tiny toolbar launcher DLL; the main app is stored under `panel\app.exe` and starts only after the toolbar button is clicked.
 
 ## Build Package
 

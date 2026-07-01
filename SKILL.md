@@ -25,7 +25,7 @@ python scripts/generate_cdr_svg.py "minimal coffee shop badge logo, two colors, 
 3. Inspect the SVG before handing it off. It should contain one `<svg>` document, a `viewBox`, no Markdown fences, no external image links, no scripts, and no embedded raster images.
 4. Use the preset to guide grouping: `icon_mark`, `logo_mark`, `subject`, `diagram_nodes`, `connectors`, `label_layout`, `background`, `typography`, and similar editable layer names.
 5. When a reference image is supplied, use `--preset image-to-svg` or `--preset subject` when appropriate, and rebuild the artwork as native SVG shapes.
-6. Import the SVG into CorelDRAW. Use the Addons `app.exe` package when CorelDRAW has no VBA, and use `assets/coreldraw_gpt_vector.bas` only when the user wants a macro bridge.
+6. Import the SVG into CorelDRAW. Use the Addons toolbar-launcher package when CorelDRAW has no VBA, and use `assets/coreldraw_gpt_vector.bas` only when the user wants a macro bridge.
 7. After import, recommend CDR-side cleanup when needed: ungroup, convert strokes to objects, convert text to curves, weld/trim, simplify nodes, and save as `.cdr`.
 
 ### 中文流程
@@ -35,7 +35,7 @@ python scripts/generate_cdr_svg.py "minimal coffee shop badge logo, two colors, 
 3. 交付前检查 SVG：必须是单个 `<svg>` 文档，包含 `viewBox`，不能有 Markdown 代码围栏、外部图片链接、脚本或内嵌位图。
 4. 根据预设要求模型使用可编辑图层名，例如 `icon_mark`、`logo_mark`、`subject`、`diagram_nodes`、`connectors`、`label_layout`、`background`、`typography` 等。
 5. 如果用户提供参照图，按场景使用 `image-to-svg` 或 `subject` 预设，只把参照图作为版式、层级、配色和风格参考，仍然要求模型重建为原生 SVG 图形。
-6. 需要进入 CorelDRAW 时，可手动导入 SVG；当前 CorelDRAW 没有 VBA 时优先使用 Addons `app.exe` 包，只有明确需要宏桥接时再使用 `assets/coreldraw_gpt_vector.bas`。
+6. 需要进入 CorelDRAW 时，可手动导入 SVG；当前 CorelDRAW 没有 VBA 时优先使用 Addons 工具栏启动器包，只有明确需要宏桥接时再使用 `assets/coreldraw_gpt_vector.bas`。
 7. 导入后根据生产要求做 CDR 侧整理，例如取消群组、描边转对象、文字转曲、焊接/修剪、简化节点并保存为 `.cdr`。
 
 ## Generation Rules
@@ -66,7 +66,7 @@ Use `assets/coreldraw_gpt_vector.bas` when the user wants CorelDRAW to generate 
 
 The macro prompts for artwork text, calls `scripts/generate_cdr_svg.py`, writes an SVG to `%TEMP%`, and imports it into the active CorelDRAW document.
 
-For a plugin-style CorelDRAW experience without VBA, build the safe external app package with `scripts/build_coreldraw_addon.ps1 -Zip` and run `dist/coreldraw_addon/GptCdrVectorInstaller.exe`. The installer is self-contained, embeds the `gpt-cdr-vector` package, auto-detects registered CorelDRAW `Programs64\Addons` roots, installs the embedded package, and writes `corel_version.txt` per target version. Both the installer and `app.exe` include an API settings page for `OPENAI_RELAY_API_KEY`, `OPENAI_VECTOR_API_URL`, `OPENAI_VECTOR_MODEL`, and `OPENAI_API_TIMEOUT`. The safe package contains no `CorelDrw.addon`, no WPF toolbar host, `app.exe`, `start-gpt-cdr-vector.cmd`, `config.json`, `msc.json`, and `uisettings.ini`; CorelDRAW will not auto-load it at startup because the old in-process WPF toolbar host could freeze CorelDRAW 2018 on some installations.
+For a plugin-style CorelDRAW experience without VBA, build the Addons toolbar-launcher package with `scripts/build_coreldraw_addon.ps1 -Zip` and run `dist/coreldraw_addon/GptCdrVectorInstaller.exe`. The installer is self-contained, embeds the `gpt-cdr-vector` package, auto-detects registered CorelDRAW `Programs64\Addons` roots, installs the embedded package, and writes `corel_version.txt` per target version. Both the installer and `panel\app.exe` include an API settings page for `OPENAI_RELAY_API_KEY`, `OPENAI_VECTOR_API_URL`, `OPENAI_VECTOR_MODEL`, and `OPENAI_API_TIMEOUT`. The package contains `CorelDrw.addon`, `AppUI.xslt`, a tiny `GptCdrVectorHost.dll` toolbar launcher, `panel\app.exe`, `start-gpt-cdr-vector.cmd`, `config.json`, `msc.json`, and `uisettings.ini`; the toolbar host must remain a minimal launcher and must not contain API, network, SVG generation, or Corel COM logic.
 
 For a plugin-style CorelDRAW experience on systems with VBA installed, use the GMS/VBA panel source in `assets/coreldraw_plugin/` and follow `docs/coreldraw-plugin-install.md`. When CorelDRAW cannot initialize VBA, use the Addons app package first or the non-VBA external panel in `scripts/gpt_cdr_vector_panel.ps1` as a fallback.
 
@@ -92,7 +92,7 @@ The non-VBA panel includes a model selector for `gpt-5.4-mini`, `gpt-5.4`, `gpt-
 
 如果设置了 `GPT_CDR_VECTOR_SKILL_DIR`，宏会直接使用该技能目录；如果没有设置，宏会弹窗要求用户输入技能目录路径。宏会把生成结果写入 `%TEMP%\gpt-cdr-vector.svg`，然后导入到当前 CorelDRAW 活动图层。
 
-如果需要在 CorelDRAW 没有 VBA 时使用本工具，优先运行 `scripts/build_coreldraw_addon.ps1 -Zip` 生成安全外部面板包，再运行 `dist/coreldraw_addon/GptCdrVectorInstaller.exe`。安装器是单文件完整安装包，内嵌 `gpt-cdr-vector` 包，会自动识别已注册的 CorelDRAW `Programs64\Addons` 目录并安装，按目标版本写入 `corel_version.txt`。安装器和 `app.exe` 都提供 API 设置页，可配置 `OPENAI_RELAY_API_KEY`、`OPENAI_VECTOR_API_URL`、`OPENAI_VECTOR_MODEL` 和 `OPENAI_API_TIMEOUT`。安全包不包含 `CorelDrw.addon` 和 WPF 工具栏宿主，只包含 `app.exe`、`start-gpt-cdr-vector.cmd`、`config.json`、`msc.json` 和 `uisettings.ini`；CorelDRAW 启动时不会自动加载本工具，以避免 CorelDRAW 2018 启动后无响应。
+如果需要在 CorelDRAW 没有 VBA 时使用本工具，优先运行 `scripts/build_coreldraw_addon.ps1 -Zip` 生成 Addons 工具栏启动器包，再运行 `dist/coreldraw_addon/GptCdrVectorInstaller.exe`。安装器是单文件完整安装包，内嵌 `gpt-cdr-vector` 包，会自动识别已注册的 CorelDRAW `Programs64\Addons` 目录并安装，按目标版本写入 `corel_version.txt`。安装器和 `panel\app.exe` 都提供 API 设置页，可配置 `OPENAI_RELAY_API_KEY`、`OPENAI_VECTOR_API_URL`、`OPENAI_VECTOR_MODEL` 和 `OPENAI_API_TIMEOUT`。包里包含 `CorelDrw.addon`、`AppUI.xslt`、极轻 `GptCdrVectorHost.dll` 工具栏启动器、`panel\app.exe`、`start-gpt-cdr-vector.cmd`、`config.json`、`msc.json` 和 `uisettings.ini`；工具栏宿主只能负责按钮和启动外部面板，不得加入 API、网络、SVG 生成或 Corel COM 逻辑。
 
 如果 CorelDRAW 已安装 VBA，也可使用 `assets/coreldraw_plugin/` 中的 GMS/VBA 面板源码，并按照 `docs/coreldraw-plugin-install.md` 安装。若 CorelDRAW 提示无法初始化 VBA，则使用 Addons 外部程序包，或把 `scripts/gpt_cdr_vector_panel.ps1` 非 VBA 外部面板作为备用。
 
